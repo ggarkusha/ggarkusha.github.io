@@ -1,118 +1,301 @@
-<!DOCTYPE HTML>
+<!DOCTYPE html>
 <html lang="en">
 <head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Grigory Garkusha | Professor of Mathematics</title>
 
-<font color="#151B54">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 
-<title>Grigory A. Garkusha</title>
-<body bgcolor="#FFFFF0" background="sum.gif">
+<style>
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
 
-<meta content="text/html; charset=windows-1251">
-<meta name="description" content="Grigory A. Garkusha">
-<meta name="keywords" content="Grigory A. Garkusha">
-<meta name="name" content="Grigory A. Garkusha">
+html {
+    scroll-behavior: smooth;
+}
 
+body {
+    font-family: Arial, sans-serif;
+    background: #f8f7f4;
+    color: #1e293b;
+    line-height: 1.7;
+}
 
-<div align="center">
-<div class="frame">
-<table summary="main body" cellpadding="20" cellspacing="9" width="920">
-<tr>
-<td colspan=2 align="middle" class="header">
-</a>
+.math-background {
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    opacity: 0.18;
+    background-image:
+      linear-gradient(rgba(30,41,59,0.05) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(30,41,59,0.05) 1px, transparent 1px);
+    background-size: 40px 40px;
+}
 
-</tr>
-<tr>
-<td width="200" valign="top" align="middle" class="header">
-<img src="GarkushaSep23.jpeg"  WIDTH="205"
-HEIGHT="290">
+.symbol {
+    position: absolute;
+    color: rgba(30,41,59,0.18);
+    font-family: "Times New Roman", serif;
+    user-select: none;
+}
 
-<td width="700" valign="top" align="left" class="header">
+.s1 { top: 10%; left: 8%; font-size: 42px; }
+.s2 { top: 22%; right: 12%; font-size: 34px; }
+.s3 { bottom: 18%; left: 15%; font-size: 36px; }
+.s4 { bottom: 10%; right: 10%; font-size: 48px; }
 
-<font size="6"><b>Grigory A. Garkusha</font>
+header {
+    position: fixed;
+    width: 100%;
+    top: 0;
+    background: rgba(255,255,255,0.92);
+    backdrop-filter: blur(12px);
+    border-bottom: 1px solid #dbe3ea;
+    z-index: 1000;
+}
+
+.navbar {
+    max-width: 1200px;
+    margin: auto;
+    padding: 20px 30px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.navbar a {
+    margin-left: 24px;
+    text-decoration: none;
+    color: #334155;
+    font-weight: 600;
+}
+
+.hero {
+    max-width: 1200px;
+    margin: auto;
+    min-height: 100vh;
+    display: grid;
+    grid-template-columns: 1.1fr 0.9fr;
+    gap: 80px;
+    align-items: center;
+    padding: 140px 30px 80px;
+}
+
+.hero h1 {
+    font-size: 72px;
+    font-weight: 300;
+    line-height: 1.1;
+    margin-bottom: 16px;
+}
+
+.hero h2 {
+    font-size: 28px;
+    color: #475569;
+    margin-bottom: 32px;
+}
+
+.hero p {
+    font-size: 20px;
+    color: #475569;
+    max-width: 700px;
+}
+
+.hero-buttons {
+    margin-top: 40px;
+    display: flex;
+    gap: 16px;
+    flex-wrap: wrap;
+}
+
+.hero-buttons a {
+    text-decoration: none;
+    padding: 14px 26px;
+    border-radius: 14px;
+    border: 1px solid #cbd5e1;
+    background: white;
+    color: #1e293b;
+    font-weight: 600;
+    transition: 0.3s ease;
+}
+
+.hero-buttons a:hover {
+    transform: translateY(-2px);
+    background: #eff6ff;
+}
+
+.photo-wrapper {
+    display: flex;
+    justify-content: center;
+}
+
+.photo-card {
+    background: white;
+    padding: 14px;
+    border-radius: 34px;
+    box-shadow: 0 25px 60px rgba(15,23,42,0.18);
+}
+
+.photo-card img {
+    width: 360px;
+    max-width: 100%;
+    border-radius: 28px;
+    display: block;
+}
+
+.section {
+    max-width: 1200px;
+    margin: auto;
+    padding: 120px 30px;
+}
+
+.section h3 {
+    color: #1d4ed8;
+    text-transform: uppercase;
+    letter-spacing: 0.2em;
+    font-size: 14px;
+    margin-bottom: 18px;
+}
+
+.section h2 {
+    font-size: 52px;
+    font-weight: 300;
+    margin-bottom: 40px;
+}
+
+.section p {
+    font-size: 20px;
+    color: #475569;
+}
+
+footer {
+    border-top: 1px solid #dbe3ea;
+    text-align: center;
+    padding: 40px;
+    color: #64748b;
+    background: white;
+}
+
+@media (max-width: 960px) {
+    .hero {
+        grid-template-columns: 1fr;
+        text-align: center;
+    }
+
+    .hero h1 {
+        font-size: 54px;
+    }
+
+    .hero-buttons {
+        justify-content: center;
+    }
+}
+
+</style>
+</head>
+
+<body>
+
+<div class="math-background"></div>
+
+</div>
+
+<header>
+    <div class="navbar">
+        <div><strong>Prof. Grigory Garkusha</strong></div>
+
+        <nav>
+            <a href="#about">About</a>
+            
+            <a href="https://ggarkusha.github.io/publist.html">Publications</a>
+            <a href="#contact">Contact</a>
+        </nav>
+    </div>
+</header>
+
+<section class="hero">
+
+    <div>
+        <h1>Grigory Garkusha</h1>
+
+        <h2>Professor of Mathematics</h2>
+
+        <p>
+            Research in algebraic geometry and topology, motivic homotopy theory,
+            algebraic K-theory, homological algebra, category theory, rings and modules theory.
+        </p>
+
+        <div class="hero-buttons">
+            <a href="http://researchgate.net/profile/Grigory_Garkusha">ResearchGate</a>
+            <a href="https://scholar.google.co.uk/citations?user=Emg-aMIAAAAJ&hl=en">Google Scholar</a>
+            <a href="https://orcid.org/0000-0001-9836-0714">ORCID</a>
+            <a href="https://arxiv.org/search/?searchtype=author&query=Garkusha%2C+G">arXiv</a>
+        </div>
+    </div>
+
+    <div class="photo-wrapper">
+        <div class="photo-card">
+            <img src="GarkushaPage.jpeg" alt="Professor portrait">
+        </div>
+    </div>
+
+</section>
+
+<section id="about" class="section">
+    <h3>About</h3>
+    <h2>Academic Profile</h2>
+
 <p>
-
-<font size="4">
-
-Professor of Mathematics
-
+I am a mathematician working in motivic homotopy theory, algebraic K-theory, (non-commutative) algebraic geometry, and topology. 
+My research is centered on the homotopy-theoretic and categorical structures underlying algebraic varieties, non-commutative algebras 
+and their associated invariants. In particular, I am interested in the interactions between stable homotopy theory, algebraic K-theory, 
+and higher categorical methods.
 </p>
 
-</font></b>
+<br><p>
+A major theme of my work is the development of explicit models and constructions in stable motivic homotopy theory, 
+especially through framed correspondences, motivic spectra, and spectral categories. My recent research has 
+focused on framed motives, K-motives, algebraic Kasparov K-theory, and reconstruction problems in motivic homotopy theory. 
+I am also interested in enriched category theory and its applications to triangulated and motivic categories.
+</p>
+
+<br><p>
+My earlier work focused on the model theory of modules and the structure of the Ziegler spectrum, 
+with particular emphasis on pure-injective modules, definable categories, and the 
+interplay between algebraic and categorical methods in ring and module theory, as well as in representation theory.
+</p>
+
+<br><p>
+I received my PhD in 1999 and my Doctor of Sciences (DSc) degree in 2010. I am also a Fellow of the Higher Education Academy.
+</p>
+
+</section>
 
 
+<section id="contact" class="section">
+    <h3>Contact</h3>
+    <h2>Academic Correspondence</h2>
 
-<font size=4>
-
+    <p>
 Department of Mathematics<br>
 Swansea University<br>
 Fabian Way<br>
 Swansea SA1 8EN<br>
-United Kingdom<br>
+United Kingdom
+    </p>
 
-<p>g.garkusha "at" swansea.ac.uk</p>
+    <p><br>
+        g.garkusha "at" swansea.ac.uk
+    </p>
+</section>
 
-(<em>do not confuse my surname with the Japanese translation of the word 
-	<A HREF="https://ggarkusha.github.io/scholar.png"><font color=blue>scholar</font></A></em> - :) )
-
-</tr>
-
-<tr>
-
-<td width="200" valign="top">
-<div width="195" valign="top" align="left" class="menu">
-
-<font size=4>
-
-<div class="nav"><a href="http://www.swansea.ac.uk/staff/science/maths/g.garkusha/"><p style="color:#151B54"><b>Homepage</p></a></div>
-<div class="nav"><a href="https://ggarkusha.github.io/publist.html"><p style="color:#151B54">Publications</b></p></a></div>
-<div class="nav"><a href="https://scholar.google.com/citations?user=Emg-aMIAAAAJ&hl=en&oi=ao"><p style="color:#151B54"><b>Google Scholar</b></p></a></div>
-
-</div>
-
-
-
-
-<td width="700" valign="top" class="content">
-<!-- Insert text here -->
-
-<font size=4>
-<div class="nav"><b><BIG>Research Interests:</BIG></b></div>
-
-<ul type="square">
-	<li>Motivic homotopy theory
-	<li>Algebraic K-theory
-	<li>Algebraic geometry and topology
-         <li>Category theory
-         <li>Rings and modules theory
-</ul>
-
-<div class="nav"><BIG><b>Degrees:</b></BIG>
-<em>&nbsp;&nbsp;DSc (2010), PhD (1999)</em>
-<em></em>
-</div>
-
-<!--
-<br>
-<div class="nav"><b><BIG>Recent conferences and schools co-organization:</BIG></b></div>
-
-<ul type="square">
-	<li>ICM-2022 Satellite Conference 
-	<A HREF="https://indico.eimi.ru/event/233/"><font color=blue>"Motives and Related Topics"</font></A>, St. Petersburg, 27 June - 1 July, 2022.
-	<li>IHES 2020 Summer School 
-	<A HREF="https://indico.math.cnrs.fr/event/5160/"><font color=blue>"Motivic, Equivariant and Non-commutative Homotopy Theory"</font></A>, 
-	Paris, 6-19 July, 2020.
-	<li>Conference "Motives and Their Applications", The Euler Mathematical Institute, St. Petersburg, 10 - 14 September, 2018.
-	<li>Summer School "Motives and Related Structures", The Euler Mathematical Institute, St. Petersburg, 3 - 7 September, 2018.
-</ul>
--->
-
-</tr>
-
-</table>
-</div>
-</div>
-
-</FONT>
+<footer>
+    Grigory Garkusha · Swansea University
+</footer>
 
 </body>
 </html>

@@ -110,7 +110,7 @@ code,.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12p
 }
 
 </style>
-</head>
+<style>.webgl-note{position:absolute;top:20px;left:20px;right:20px;max-width:620px;padding:18px;background:#172534f2;border:1px solid #59758c;border-radius:8px;color:#e7edf4;line-height:1.6;z-index:8}.webgl-note b{display:block;margin-bottom:6px}a{color:#8bcdf0}</style></head>
 <body>
 <header>
   <h1>E-Framed Thom Laboratory<small>Garkusha–Neshitov, <i>Fibrant resolutions for motivic Thom spectra</i></small></h1>
@@ -154,10 +154,45 @@ code,.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12p
 </script>
 <script>
 /* ---- core.js ---- */
+/* Exact arithmetic on the displayed finite-decimal parameters (characteristic zero).
+   Rendering, root locations, winding and separation plots remain numerical. */
+const Q = {
+ gcd(a,b){a=a<0n?-a:a;b=b<0n?-b:b;while(b){const r=a%b;a=b;b=r;}return a;},
+ make(n,d=1n){if(d===0n)throw Error('Zero denominator');if(d<0n){n=-n;d=-d;}const g=this.gcd(n,d);return [n/g,d/g];},
+ from(x){if(Array.isArray(x))return x;let s=String(x),sg=1n;if(s[0]==='-'){sg=-1n;s=s.slice(1);}const [m,e='0']=s.toLowerCase().split('e');const parts=m.split('.'),digits=parts.join(''),power=Number(e)-(parts[1]||'').length;return power>=0?this.make(sg*BigInt(digits)*10n**BigInt(power)):this.make(sg*BigInt(digits),10n**BigInt(-power));},
+ add(a,b){return this.make(a[0]*b[1]+b[0]*a[1],a[1]*b[1]);},
+ neg(a){return [-a[0],a[1]];},sub(a,b){return this.add(a,this.neg(b));},
+ mul(a,b){return this.make(a[0]*b[0],a[1]*b[1]);},div(a,b){return this.make(a[0]*b[1],a[1]*b[0]);},
+ pow(a,n){return this.make(a[0]**BigInt(n),a[1]**BigInt(n));},num(a){const n=Number(a[0]),d=Number(a[1]);if(Number.isFinite(n)&&Number.isFinite(d))return n/d;const sign=a[0]<0n?-1:1,ns=(a[0]<0n?-a[0]:a[0]).toString(),ds=a[1].toString();return sign*(Number(ns.slice(0,15))/Number(ds.slice(0,15)))*10**(ns.length-ds.length-Math.min(15,ns.length)+Math.min(15,ds.length));},zero:a=>a[0]===0n
+};
+const q0=()=>[0n,1n],q1=()=>[1n,1n];
+function qtrim(a){a=a.slice();while(a.length>1&&Q.zero(a.at(-1)))a.pop();return a;}
+function qdivmod(a,b){a=qtrim(a);b=qtrim(b);if(b.every(Q.zero))throw Error('Zero polynomial');const r=a.slice(),q=Array.from({length:Math.max(1,a.length-b.length+1)},q0);while(r.length>=b.length&&!r.every(Q.zero)){const k=r.length-b.length,c=Q.div(r.at(-1),b.at(-1));q[k]=c;for(let j=0;j<b.length;j++)r[k+j]=Q.sub(r[k+j],Q.mul(c,b[j]));while(r.length>1&&Q.zero(r.at(-1)))r.pop();}return [qtrim(q),qtrim(r)];}
+function qgcd(a,b){while(!b.every(Q.zero)){const r=qdivmod(a,b)[1];a=b;b=r;}const c=a.at(-1);return a.map(x=>Q.div(x,c));}
+function exactParts(params){
+ const d=+params.d,h=Q.from(params.hom),p=Q.mul(Q.from(params.p),Q.pow(h,2)),q=Q.mul(Q.from(params.q),Q.pow(h,3));
+ const f=d===4?[Q.mul(Q.from(params.r),Q.pow(h,4)),q,p,q0(),q1()]:[q,p,q0(),q1()];
+ const df=f.slice(1).map((x,i)=>Q.mul(x,Q.from(i+1)));let c=qgcd(f,df),w=qdivmod(f,c)[0],i=1;const parts=[];
+ while(w.length>1&&i<=d){const y=qgcd(w,c),z=qdivmod(w,y)[0];for(let j=1;j<z.length;j++)parts.push(i);w=y;c=qdivmod(c,y)[0];i++;}
+ return parts.sort((a,b)=>b-a);
+}
+function qrref(rows,ncols){const M=rows.map(r=>r.slice()),piv=[];let r=0;for(let c=0;c<ncols&&r<M.length;c++){let k=r;while(k<M.length&&Q.zero(M[k][c]))k++;if(k===M.length)continue;[M[r],M[k]]=[M[k],M[r]];const a=M[r][c];M[r]=M[r].map(x=>Q.div(x,a));for(let j=0;j<M.length;j++)if(j!==r&&!Q.zero(M[j][c])){const b=M[j][c];M[j]=M[j].map((x,l)=>Q.sub(x,Q.mul(b,M[r][l])));}piv.push(c);r++;}return {basis:M.slice(0,r),piv};}
+function qnull(rows,n){const {basis,piv}=qrref(rows,n),free=Array.from({length:n},(_,i)=>i).filter(i=>!piv.includes(i));return free.map(j=>{const v=Array.from({length:n},q0);v[j]=q1();piv.forEach((k,i)=>v[k]=Q.neg(basis[i][j]));return v;});}
+function exactLimitIdeal(points,wx,wy){
+ const key=JSON.stringify([points,wx,wy]);if(exactLimitIdeal.cache?.key===key)return exactLimitIdeal.cache.res;
+ const pts=points.map(p=>p.map(x=>Q.from(x)));const unique=new Set(points.map(p=>JSON.stringify(p)));if(unique.size!==points.length)return {invalid:true,reason:'Coincident input points: separate the points to specify a reduced configuration.'};
+ const D=points.length*Math.max(wx,wy)+1,mons=[];for(let a=0;a<=D;a++)for(let b=0;b<=D;b++){const w=a*wx+b*wy;if(w<=D)mons.push({a,b,w});}mons.sort((a,b)=>a.w-b.w||a.b-b.b);
+ const J=[],H=[],raw=[];
+ for(let k=0;k<=D;k++){const cols=mons.filter(m=>m.w<=k),ms=mons.filter(m=>m.w===k),A=pts.map(p=>cols.map(m=>Q.mul(Q.pow(p[0],m.a),Q.pow(p[1],m.b))));const N=qnull(A,cols.length),ids=ms.map(m=>cols.indexOf(m)),rr=qrref(N.map(v=>ids.map(j=>v[j])),ms.length);raw[k]=rr.basis;J[k]={mons:ms,basis:rr.basis.map(v=>Float64Array.from(v.map(x=>Q.num(x))))};H[k]=ms.length-rr.piv.length;}
+ const gens=[];for(let k=0;k<=D;k++){const idx={};J[k].mons.forEach((m,i)=>idx[m.a+','+m.b]=i);const S=[];for(const [w,da,db]of [[wx,1,0],[wy,0,1]]){if(k<w)continue;for(const v of raw[k-w]){const b=Array.from({length:J[k].mons.length},q0);J[k-w].mons.forEach((m,i)=>{const j=idx[(m.a+da)+','+(m.b+db)];if(j!==undefined)b[j]=Q.add(b[j],v[i]);});S.push(b);}}const mu=raw[k].length-qrref(S,J[k].mons.length).piv.length;for(let i=0;i<mu;i++)gens.push(k);}
+ const res={H,J,gens,mu:gens.length,length:H.reduce((a,b)=>a+b,0),D,exact:true};exactLimitIdeal.cache={key,res};return res;
+}
+
 'use strict';
 /* =====================================================================
    E-Framed Thom Laboratory — core framework
    ===================================================================== */
+function disposeGroup(group){const mats=new Set();while(group.children.length){const child=group.children[0];group.remove(child);child.traverse(o=>{if(o.geometry)o.geometry.dispose();for(const m of (Array.isArray(o.material)?o.material:[o.material]))if(m&&!mats.has(m)){mats.add(m);m.dispose();}});}}
 const TAU = Math.PI * 2;
 const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
 const lerp = (a, b, t) => a + (b - a) * t;
@@ -348,7 +383,9 @@ const App = {
   tabs: [], cur: null, T: THREE,
   init() {
     const canvas = $('#gl');
-    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: /[?&]shot/.test(location.search) });
+    this.glOK=true;
+    try{this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: /[?&]shot/.test(location.search) });}
+    catch(e){this.glOK=false;this.renderer={setPixelRatio(){},setClearColor(){},setSize(){},render(){}};const note=el('div',{class:'webgl-note',html:'<b>3D rendering is unavailable in this browser.</b> The controls, computations, mathematical explanations and architecture diagram remain available. Open this file in a browser with WebGL to view the 3D scenes.'});$('#stage').append(note);}
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     this.renderer.setClearColor(0x0d1117, 0);
     this.scene = new THREE.Scene();
@@ -402,7 +439,7 @@ const App = {
     $('#pg-math').innerHTML = ''; $('#pg-math').append(tab.theoryEl);
     this.scene.add(tab.group);
     tab.labels.forEach(l => l.d.style.display = '');
-    $('#diagram').hidden = !tab.isDiagram; $('#gl').style.visibility = tab.isDiagram ? 'hidden' : 'visible';
+    const notice=$('.webgl-note');if(notice)notice.hidden=!!tab.isDiagram; $('#diagram').hidden = !tab.isDiagram; $('#gl').style.visibility = tab.isDiagram ? 'hidden' : 'visible';
     this.hideInfo(); this.readout([]); this.setLegend(tab.legend || []); $('#insets').innerHTML = ''; tab.insets && tab.insets.forEach(c => $('#insets').append(c));
     this.orbit.minR = tab.minR || 1.2; this.orbit.maxR = tab.maxR || 80;
     const h = tab.home; this.orbit.setHome(h.theta, h.phi, h.radius, new THREE.Vector3(...h.target));
@@ -478,7 +515,7 @@ const App = {
       this.renderer.render(this.scene, this.camera);
       const v = new THREE.Vector3();
       this.cur.labels.forEach(l => {
-        if (!l.visible) { l.d.style.display = 'none'; return; }
+        if (!this.glOK || !l.visible) { l.d.style.display = 'none'; return; }
         l.getPos(v); v.project(this.camera);
         if (v.z > 1 || v.z < -1 || Math.abs(v.x) > 1.15 || Math.abs(v.y) > 1.15) { l.d.style.display = 'none'; return; }
         l.d.style.display = '';
@@ -554,7 +591,7 @@ class Tab {
 /* =====================================================================
    Text content: guide + experiment 1.  (String.raw: backslashes are literal.)
    References: labels in brackets, e.g. [Voevlemma], are the \label names in the
-   attached TeX source of the paper; section numbers refer to that source.
+   paper’s TeX source of the paper; section numbers refer to that source.
    ===================================================================== */
 const THEORY = {};
 const GUIDE = {};
@@ -562,7 +599,7 @@ const GUIDE = {};
 GUIDE.overview = String.raw`
 <h2>E-Framed Thom Laboratory</h2>
 <p class="ref">An interactive companion to G. Garkusha, A. Neshitov, <i>Fibrant resolutions for motivic Thom spectra</i>, Ann. K-Theory 8 (2023) 421–488.
-References in square brackets, e.g. <code>[Voevlemma]</code>, are the <code>\label</code>s of the attached TeX source.</p>
+Bracketed references are source labels of the paper. The published numbering can be found in <a href="https://arxiv.org/pdf/1804.07621" target="_blank" rel="noopener">the authors’ paper</a> (arXiv v2, 2023); DOI: <a href="https://doi.org/10.2140/akt.2023.8.421" target="_blank" rel="noopener">10.2140/akt.2023.8.421</a>.</p>
 
 <h3>The mathematics in one paragraph</h3>
 <p>Let $k$ be a perfect field and $E$ a motivic Thom $T$-spectrum, $E_n=\operatorname{colim}_i V_{n,i}/(V_{n,i}-Z_{n,i})$, with <i>bounding constant</i> $d$
@@ -578,11 +615,11 @@ Hilbert schemes of l.c.i. finite flat subschemes of $\mathbb A^n$ [mglembomega, 
 <p>$SH(k)$ has no canonical geometric realisation, and a single 3D object could not honestly carry all of these statements. Instead each experiment isolates <b>one mechanism of a proof</b> and realises it by a finite-dimensional object on which the relevant computation is <i>actually carried out</i>.</p>
 <table class="fid">
 <tr><th>#</th><th>Mechanism isolated</th><th>Model</th><th>Fidelity</th></tr>
-<tr><td>1</td><td>What an $E$-framed correspondence is; why <i>normal</i> data suffice ($\mathrm{fog}$ has convex fibres)</td><td>$n=1$, $k=\mathbb C$: Thom-collapse landscape of $\phi=P_Za$</td><td><span class="badge b-ex">exact algebra</span><span class="badge b-sh">analytic shadow</span></td></tr>
+<tr><td>1</td><td>What an $E$-framed correspondence is; why <i>normal</i> data suffice ($\mathrm{fog}$ has convex fibres)</td><td>$n=1$, $k=\mathbb C$: Thom-collapse landscape on the selected pure neighbourhood</td><td><span class="badge b-ex">exact algebra</span><span class="badge b-sh">analytic shadow</span></td></tr>
 <tr><td>2</td><td>Which supports occur: $\mathrm{Hilb}^{\rm lci}_d(\mathbb A^n)$, discriminant, non-reduced limits</td><td>$\mathrm{Hilb}_d(\mathbb A^1)=\mathbb A^d$ (swallowtail); points in $\mathbb R^2$</td><td><span class="badge b-ex">exact</span> (real slices)</td></tr>
 <tr><td>3</td><td>Why the embedding $Z\subset\mathbb A^n$ is irrelevant stably (Lemma <code>emb=omega</code>)</td><td>the doubling homotopy as an explicit braid in $\mathbb A^2\times[0,1]$</td><td><span class="badge b-ex">exact</span> (real points)</td></tr>
 <tr><td>4</td><td>Why fibrancy starts at level $\max(0,d)$: probe dimension vs. codimension</td><td>general position in $\mathbb R^3$; index chart in $(n,i)$</td><td><span class="badge b-sh">topological shadow</span><span class="badge b-ex">exact bookkeeping</span></td></tr>
-<tr><td>5</td><td>Logical architecture; which theorem needs which hypothesis</td><td>interactive commutative diagram</td><td><span class="badge b-ex">exact</span> (statements)</td></tr>
+<tr><td>5</td><td>Logical architecture; which theorem needs which hypothesis</td><td>interactive dependency and comparison diagram</td><td><span class="badge b-ex">exact</span> (statements)</td></tr>
 </table>
 
 <h3>Fidelity vocabulary</h3>
@@ -607,7 +644,7 @@ A construction · B geometric interpretation · C mechanism · D connection with
 <li><b>Click</b> any object in the 3D scene (spheres, arrows, surfaces, strands) to open a definition card with the exact statement it stands for.</li>
 <li>In experiment 1, white spheres on the plane are <b>draggable</b>.</li>
 <li>The <b>legend</b> (top-left) toggles layers; the <b>readout</b> (top-right) reports computed invariants.</li>
-<li>Works offline: Three.js (r147) and KaTeX (0.16.11) are embedded in this single file; no network access is needed. Requires a browser with WebGL; developed and automatically tested in Chromium. Safari (macOS/iPadOS) and Firefox use the same standard APIs (WebGL, Pointer Events, ResizeObserver) but were not tested here.</li>
+<li>Works offline: Three.js (r147) and KaTeX (0.16.11) are embedded in this single file; no network access is needed. Requires a browser with WebGL; The code uses standard browser APIs; this repaired edition was checked with the actual Three.js geometry and KaTeX in a simulated DOM, without live GPU rendering. Live 3D rendering and Safari/iPadOS touch behaviour require browser verification. If WebGL is unavailable, the mathematical panels and computations still load.</li>
 </ul>
 <h3>Suggested route (≈15 minutes)</h3>
 <ol>
@@ -622,9 +659,9 @@ GUIDE.insights = String.raw`
 <h2>Mathematical insights offered by the laboratory</h2>
 <ol>
 <li><b>Normal framings are homotopically free.</b> Two framings with the same support and the same normal datum differ by an element of $I^2$; the straight line between them stays a framing on a Henselian neighbourhood. This is why $M_E(Y)\simeq\widetilde M_E(Y)$ and why, for $MGL$, only the l.c.i. scheme $Z$ survives (Exp. 1).</li>
-<li><b>For $E=MGL$ the only genuine constraint on a support is “l.c.i.”</b> (necessary for every $E$, by Lemma <code>Frescheme</code>), not “reduced” and not “embedded in $\mathbb A^n$”. The space of supports $\mathrm{Hilb}_d(\mathbb A^1)=\mathbb A^d$ is $\mathbb A^1$-contractible <i>because</i> non-reduced points are allowed; its étale locus is not (braid groups). The non-l.c.i. fat point $(x,y)^2$ is a legitimate flat limit of l.c.i. supports yet can never be a support itself (Exp. 2).</li>
-<li><b>The embedding is invisible after stabilisation.</b> The doubling trick $(z,t)\mapsto((1-t)z+t\beta(z),\,t(t-1)z,\,t)$ untangles any two embeddings in $\mathbb A^{2n}$ and is a braid in the real picture; the naive path collides (Exp. 3).</li>
-<li><b>Fibrancy is a dimension count.</b> The slack of the $n$-th layer at level $i$ is $(n+i-d)-n=i-d$, independent of $n$; this is why a single threshold $\max(0,d)$ governs the whole spectrum. At the borderline the supports form a <i>monoid</i> of effective degrees whose group completion is the obstruction that Segal’s machine would have to fix (Exp. 4; the identification with $GW(k)$ is quoted from the literature — Neshitov, [GNP] — and is not proved in this paper).</li>
+<li><b>For $E=MGL$ the only genuine constraint on a support is “l.c.i.”</b> (under the rank-$n$ bundle assumptions of Convention 11.1, by Lemma 11.6 / <code>Frescheme</code>), not “reduced”; the embedding becomes irrelevant after stabilisation. The space of supports $\mathrm{Hilb}_d(\mathbb A^1)=\mathbb A^d$ is $\mathbb A^1$-contractible <i>because</i> non-reduced points are allowed; its étale locus is not (braid groups). The non-l.c.i. fat point $(x,y)^2$ is a legitimate flat limit of l.c.i. supports yet is excluded as a scheme-theoretic support in the $MGL$ model (Exp. 2).</li>
+<li><b>The embedding is invisible after stabilisation.</b> The doubling trick $(z,t)\mapsto((1-t)z+t\beta(z),\,t(t-1)z,\,t)$ untangles any two embeddings in $\mathbb A^{2n}$ and is a braid in the real picture; the naive map ceases to embed the fixed labelled scheme (Exp. 3).</li>
+<li><b>Fibrancy is a dimension count.</b> The slack of the $n$-th layer at level $i$ is $(n+i-d)-n=i-d$, independent of $n$; this is why a single threshold $\max(0,d)$ governs the whole spectrum. At $i=d$ the minimum codimension is already $n+1$, so the strict inequality holds. At $i=d-1$ the estimate permits equality. At equality connectivity is not guaranteed; group completion must be analysed for the particular coefficient theory. A nontrivial component monoid need not fail to be a group.</li>
 <li><b>Hypotheses are load-bearing.</b> Removing “symmetric + contractible alternating action” leaves only $\Theta^\infty$; removing “algebraically closed, $\mathrm{char}=0$” removes the topological comparison (Exp. 5).</li>
 </ol>
 
@@ -644,9 +681,9 @@ GUIDE.insights = String.raw`
 THEORY.t1 = {
 lead: String.raw`<b>Intuition.</b> A framed correspondence is a Pontryagin–Thom datum: finitely many points $Z$ of the line together with a map $\phi$ from a small neighbourhood of $Z$ into the fibre $V$ which hits the zero section <i>exactly</i> on $Z$. Collapsing everything outside the neighbourhood to a point turns $\phi$ into a map of Thom spaces. The experiment separates <i>data</i> from <i>bookkeeping</i>: only the behaviour of $\phi$ in the <i>normal direction</i> to $Z$ matters, because all framings with the same normal behaviour are joined by a straight line.`,
 fidelity: String.raw`<table class="fid">
-<tr><td><span class="badge b-ex">exact</span></td><td>The algebra: factorisation $\phi=P_Z\,a$, multiplicities, the l.c.i. scheme $Z'=\phi^{-1}(Z_1)$, the normal datum $N(\phi)\leftrightarrow \bar a\in\mathcal O(Z')^\times$, the interpolation $\phi_s$, its zero set (numerical roots of $1+s\lambda P_Z$), critical values and merge levels.</td></tr>
+<tr><td><span class="badge b-ex">exact</span></td><td>The algebra: factorisation $\phi=P_Z\,a$, multiplicities, the l.c.i. scheme $Z'=\phi^{-1}(Z_1)$, the normal datum $N(\phi)\leftrightarrow \bar a\in\mathcal O(Z')^\times$, the interpolation $\phi_s$, the closed-form separating radius; locations of unwanted zeros and critical points are numerical renderings, not certified root locations.</td></tr>
 <tr><td><span class="badge b-sh">shadow</span></td><td>Étale/Henselian neighbourhoods are replaced by connected components of $\{|\phi|<\rho\}$ in $\mathbb C=\mathbb A^1(\mathbb C)$; $\Theta\circ\phi$ is the topological Pontryagin–Thom map $S^2\to S^2$ of complex points; $T(\mathbb C)\simeq S^2$.</td></tr>
-<tr><td><span class="badge b-il">illustration</span></td><td>Landscape heights (any monotone function of $|\phi|$ would do), the log-length of arrows, the radial reparametrisation $\Theta$ of the disc onto the sphere, the particular classifying map $\psi$.</td></tr></table>`,
+<tr><td><span class="badge b-il">illustration</span></td><td>Landscape heights (any monotone function of $|\phi|$ would do), the log-length of arrows, the radial reparametrisation of the disc with its boundary collapsed onto the sphere, the particular classifying map $\psi$.</td></tr></table>`,
 A: String.raw`
 <p>Take $k=\mathbb C$, $X=\mathrm{pt}$, $n=1$, and $E$ with $E_1=V_1/(V_1-Z_1)$, $V_1\to Z_1$ a line bundle ($E=\Sigma^\infty_T\mathrm{pt}_+$: $V_1=\mathbb A^1$, $Z_1=\mathrm{pt}$). Voevodsky’s Lemma [Voevlemma] identifies
 $$\mathrm{Fr}^E_1(\mathrm{pt})=\mathrm{Hom}(\mathbb P^{\wedge1},E_1)\;\cong\;\{(U,Z,\phi)\}/\!\sim,$$
@@ -656,27 +693,21 @@ with $Z\subset\mathbb A^1$ closed and finite, $U$ an étale neighbourhood of $Z$
 $$N(\phi):\;N_{Z'/U}\longrightarrow V_1|_{Z'},\qquad\text{dual to}\quad J/J^2\otimes\mathcal O_{Z'}\to I/I^2,\ \ \bar w\mapsto\bar\phi=\bar a\,\overline{P_Z}\quad[\texttt{Nphi}].$$
 Thus $N(\phi)\leftrightarrow\bar a\in\mathcal O(Z')^\times$: the $(m_j-1)$-jet of $a$ at $z_j$. The forgetful map is $\mathrm{fog}(U,Z,\phi,f)=(U,Z,N(\phi),\pi\phi,f)$, with $\pi\phi=:\psi:U\to Z_1$.</p>
 <p><b>The fibre of $\mathrm{fog}$.</b> Let $\phi_0=P_Z$, $\phi_1=P_Z(1+\lambda P_Z)=\phi_0+\lambda\phi_0^2$. Both frame $Z$, $N(\phi_0)=N(\phi_1)$, and $\phi_1-\phi_0\in I^2$. Set
-$$\phi_s=(1-s)\phi_0+s\phi_1=P_Z\,(1+s\lambda P_Z),\qquad s\in[0,1].$$
+$$\phi_s=(1-s)\phi_0+s\phi_1=P_Z\,(1+s\lambda P_Z),\qquad s\in\mathbb A^1;\quad [0,1]\text{ is the displayed real slice}.$$
 <p><b>E-twist.</b> For $E^{(2)}=\mathrm{Th}(\mathcal O(-1)\to\mathbb P^1)$ in level 1 (the case $i=2$ of $MGL=\operatorname{colim}E^{(i)}$) a framing is a pair $\phi=(\psi,v)$, $\psi:U\to Z_1=\mathbb P^1$, $v\in\Gamma(U,\psi^*\mathcal O(-1))$ with zero scheme $Z'$; locally $v=a\cdot w_\psi$ with $w_\psi$ a generator, and everything above applies verbatim with $\psi$ held fixed.</p>`,
 B: String.raw`
-<ul>
-<li><b>The plane</b> is $\mathbb A^1(\mathbb C)=\mathbb C$, the source of the level-1 correspondence ($\mathbb P^{\wedge1}\simeq S^2$ with $\infty$ as base point).</li>
-<li><b>Height</b> $=\min(|\phi_s|,\rho)/\rho$ (raised to $0.85$ for readability). Pits touching the plane are the zeros; the flat <b>plateau</b> is the locus sent to the base point $*$ of $V_1/(V_1-Z_1)$.</li>
-<li><b>Hue</b> $=\arg\phi_s$. The hue wheel winds $m_j$ times around a pit of multiplicity $m_j$: this is the local degree of the collapse.</li>
-<li><b>Coloured components</b> are the connected components of $\{|\phi_s|<\rho\}$: <span style="color:#5fd4c4">saturated</span> if they contain only points of $Z$ (a legitimate neighbourhood $U$), <span style="color:#999">grey</span> if they contain only garbage zeros, <span style="color:#ff6b6b">red</span> if mixed.</li>
-<li><b>Amber arrows</b> display $N(\phi)$ at each $z_j$ (direction = phase, length $\sim\log|\cdot|$).</li>
-<li><b>Red octahedra</b>: garbage zeros of $\phi_s$. <b>Blue tetrahedra</b>: critical points of $\phi_s$.</li>
-<li><b>The sphere</b> is the Thom space $T(\mathbb C)\simeq S^2$: radius coordinate $|w|/\rho$ from the south pole (zero section) to the north pole (base point), hue $=\arg w$. Colours on the landscape are the pull-back of the colours on the sphere along $\Theta\circ\phi_s$.</li>
-<li><b>The inset graph</b> plots $\rho_{\rm crit}(s)$, the largest $\rho$ for which the components remain pure, and its minimum $\rho_*$.</li>
-</ul>`,
+<ul><li>The source is a cropped view of $\mathbb A^1(\mathbb C)$. Heights and hue within the selected pure neighbourhood show the modulus and argument of $\phi_s$; height is illustrative.</li>
+<li>The plateau is the collapsed complement of that neighbourhood. Unwanted-zero components are also on the plateau, even though their raw polynomial values vanish.</li>
+<li>If the radius is not strictly separating, the readout says “not certified”; the diagnostic scene does not assert a collapse supported only at $Z$.</li>
+<li>The arrows show reduced values of the normal map in the local generator $(z-z_j)^{m_j}$. Higher jets at a fat point are not drawn. In the global generator $P_Z$ the unit is $1+s\lambda P_Z$, whose class modulo $P_Z$ is $1$.</li>
+<li>The sphere is the Betti-realised fibre Thom space, modelled by $D^2/\partial D^2\cong S^2$. Its zero section is the south pole and its basepoint the north pole. The second sphere in the twisted setting represents only the base $\mathbb P^1$.</li></ul>`,
 C: String.raw`
 <ol>
-<li><b>The convex combination is again a framing.</b> $\phi_s$ vanishes on $Z'$, and $N(\phi_s)=(1-s)N(\phi_0)+sN(\phi_1)=N(\phi_0)$ is an isomorphism. By [Nphi12](2) (Nakayama over a Henselian pair) $\phi_s$ is a framing of $Z$ on the Henselisation of $Z$ in $U$. Here: the arrows do not move as $s$ varies.</li>
-<li><b>What changes is irrelevant.</b> The zero set of $\phi_s$ is $Z\sqcup\{1+s\lambda P_Z=0\}$. The $\deg Z$ extra zeros lie on the level curve $|P_Z|=1/(s|\lambda|)$ and fall in from infinity as $s$ grows; they stay away from $Z$ because $a_s=1+s\lambda P_Z$ equals $1$ on $Z$. Everything outside $U$ is collapsed to $*$, so these zeros are invisible to the correspondence.</li>
-<li><b>One neighbourhood serves the whole segment.</b> A neighbourhood is legitimate while its components are pure. Merging of components occurs at critical values $|\phi_s(c)|$; the function $\rho_{\rm crit}(s)$ is positive and continuous on $(0,1]$ and tends to $+\infty$ as $s\to0^+$ (the garbage zeros escape to infinity), hence $\rho_*=\inf_{s\in[0,1]}\rho_{\rm crit}(s)>0$; the scan displays this minimum. In the algebraic proof, the Henselisation of $(\mathbb A^n\times\Delta^m,\,Z\times\Delta^m)$ plays the role of “$\rho<\rho_*$”.</li>
-<li><b>Conclusion.</b> The fibre of $\mathrm{fog}$ over a normally framed point is “affine”: the $m$-simplex $\Phi=\sum t_i\phi_i$ of Lemma [homotopy] fills every tuple $(Z,\phi_0,f_0),\dots,(Z,\phi_m,f_m)$ of the Čech nerve $\check C(\mathrm{fog})$, compatibly with faces and degeneracies. Hence $C_*\mathrm{fog}$ has a left and a right inverse in $SH_{S^1}(k)$ and is an equivalence [normfrcoret].</li>
-</ol>
-<p>The two requirements beyond $N(\phi_i)=N(\phi_0)$ are that all $\phi_i$ have the same $\psi=\pi\phi_i$ (so that the sum is taken in one fibre of $V_n$) and that the maps $f_i$ agree on $Z$. In the twisted display $\psi$ is therefore held fixed while $s$ varies.</p>`,
+<li><b>Equal normal data.</b> For $I=(P_Z)$, the framings $\phi_s=P_Z(1+s\lambda P_Z)$ differ from $P_Z$ by an element of $I^2$. Their normal maps agree on the full zero scheme, including its nilpotents. With the same classifying map $\psi$ the combination is taken fibrewise. Lemma 11.11 / [Nphi12] gives the framing property on the Henselian neighbourhood.</li>
+<li><b>An algebraic neighbourhood for the whole family.</b> On $U=D(1+s\lambda P_Z)\subset\mathbb A^1_z\times\mathbb A^1_s$ the factor $1+s\lambda P_Z$ is a unit, so $V(\phi_s)=V(P_Z)\times\mathbb A^1_s$ scheme-theoretically. The open inclusion is étale. The support is finite flat of constant length $\deg P_Z$. No analytic compactness argument is required for this algebraic framed homotopy.</li>
+<li><b>The analytic collapse.</b> Put $a=s\lambda$. For $a\ne0$ write $w=aP_Z$; then $|\phi_s|=|w(w+1)|/|a|$. The quadratic lemniscate separates the zeros at $w=0$ and $w=-1$ below the critical value $1/4$. The first mixed-component level is $\rho_{\rm crit}(s)=1/(4s|\lambda|)$ for $s>0$, with $\rho_{\rm crit}(0)=+\infty$. The neighbourhood drawn is $U_s^{an}=\{|\phi_s|<\rho,\ \mathrm{Re}(s\lambda P_Z)>-1/2\}$, with the strict condition $\rho<\rho_{\rm crit}(s)$. All other components, including those containing unwanted zeros, map to the basepoint. A uniform choice is $0<\rho<\rho_*=1/(4|\lambda|)$. The plot samples this closed-form curve; it is not a numerical proof of an unknown minimum.</li>
+<li><b>General normal-framing comparison.</b> The paper uses all affine-combination simplices $\sum t_i\phi_i$ in the Čech nerve, a common $\psi$, equal full normal data, maps to $Y$ agreeing on $Z$, and the étale-coordinate hypothesis on $Y$ in [homotopy]. These hypotheses, followed by descent, give the comparison of motives. The one-dimensional family illustrates that argument.</li>
+</ol>`,
 D: String.raw`
 <ul>
 <li><b>Voevodsky’s Lemma</b> [Voevlemma] — the triple $(U,Z,\phi)$.</li>
@@ -687,10 +718,10 @@ D: String.raw`
 </ul>`,
 E: String.raw`
 <ul>
-<li>Only $n=1$, $X=\mathrm{pt}$, and (for the main display) $E=\Sigma^\infty_T\mathrm{pt}_+$. For $n\ge2$ the support is a finite subscheme of $\mathbb A^n$ cut out by $n$ equations, and the “plane” becomes $\mathbb C^n$; the algebra is identical but cannot be drawn.</li>
+<li>Only $n=1$, $X=\mathrm{pt}$, and (for the main display) $E=\Sigma^\infty_T\mathrm{pt}_+$. For $n\ge2$ the support is a finite subscheme of $\mathbb A^n$ cut out by $n$ equations, and the source becomes $\mathbb C^n$. Under Convention 11.1 the framing has $n$ fibre coordinates; a general Thom spectrum can have a different target codimension.</li>
 <li>Analytic sublevel components are a <i>model</i> for étale neighbourhoods: they respect the logic (small enough ⇒ pure) but are not étale neighbourhoods; Henselisation is a germ-level object.</li>
 <li>The twisted sphere shows the base $Z_1=\mathbb P^1$ only; the Thom space of the whole bundle ($\simeq\mathbb{CP}^2$ for $\mathcal O(-1)\to\mathbb P^1$) has real dimension 4 and is not drawn.</li>
-<li>The homotopy $\phi_s$ is a <i>specific</i> segment in the fibre; the theorem uses all simplices $\sum t_i\phi_i$ and the functoriality statement [ooo2].</li>
+<li>The homotopy $\phi_s$ is a <i>specific</i> algebraic family in the fibre; the theorem uses all simplices $\sum t_i\phi_i$ and the functoriality statement [ooo2].</li>
 <li>Nothing is claimed about $\mathbb A^1$-invariance here; that is the content of experiments 3 and 4 and of [GPPresheaves].</li>
 </ul>`
 };
@@ -702,7 +733,7 @@ E: String.raw`
 THEORY.t2 = {
 lead: String.raw`<b>Intuition.</b> For $E=MGL$ the data of a framed correspondence collapses to its <i>support</i>: a finite flat l.c.i. subscheme $Z\subset\mathbb A^n_X$ with a map to $Y$ [mglembomega]. The geometry of $E$-framed motives is then the geometry of the Hilbert scheme of such $Z$. This experiment explores that space exactly in the two smallest cases: on the line, where it is an affine space of monic polynomials whose discriminant is a swallowtail; and in the plane, where colliding points remember a direction and may even <i>leave</i> the l.c.i. locus.`,
 fidelity: String.raw`<table class="fid">
-<tr><td><span class="badge b-ex">exact</span></td><td>Root computation (Durand–Kerner), complex discriminants, strata by multiplicity partition, winding number of $\Delta$ along the loop, induced permutation of roots, contraction $a_j\mapsto t^ja_j$; in mode B: Hilbert function and top-weighted-degree initial ideal of $I(Q)$ by linear algebra, hence the exact flat limit and its number of generators.</td></tr>
+<tr><td><span class="badge b-ex">exact</span></td><td>Exact rational square-free decomposition of the static polynomial, exact weighted Hilbert functions and generator counts for the finite-decimal input coordinates; the contraction $a_j\mapsto t^ja_j$. Root locations (Durand–Kerner), winding, monodromy tracking, and the drawn geometry are numerical and labelled accordingly.</td></tr>
 <tr><td><span class="badge b-sh">shadow</span></td><td>The 3D space is the <i>real slice</i> $(p,q,r)\in\mathbb R^3$ of $\mathbb C^d/\{\text{translations}\}$. The complex loop $P+\varepsilon e^{i\theta}\hat n$ is drawn only through its real shadow (a segment) plus the roots in the complex plane. Mode B uses real points of $\mathbb A^2$.</td></tr>
 <tr><td><span class="badge b-il">illustration</span></td><td>Tube radii, clipping box, the glyphs for limit schemes (ball $=\mathfrak m^2$; curve $=$ curvilinear).</td></tr></table>`,
 A: String.raw`
@@ -717,16 +748,14 @@ B: String.raw`
 <ul>
 <li><b>Mode A.</b> Axes $(p,q,r)$ (cubic: the plane $r=0$). The translucent teal surface is the stratum $(2,1,1)$ (double root), the amber curve the cusp edge $(3,1)$, the violet curve the self-intersection $(2,2)$, the pink curve an isolated real branch (two <i>complex</i> double roots), the white sphere the swallowtail point $z^d$.</li>
 <li>The white sphere $P$ is the current support; a grey sphere is the base point before contraction; the amber curve through $P$ is the contraction path $t\mapsto(t^2p,t^3q,t^4r)$.</li>
-<li><b>Inset</b>: the roots of $f$ in $\mathbb C$ (the support $Z\subset\mathbb A^1(\mathbb C)$), coloured and with trails; a white ring marks colliding roots.</li>
+<li><b>Inset</b>: the roots of $f$ in $\mathbb C$ (the support $Z\subset\mathbb A^1(\mathbb C)$), coloured and with trails; a white ring marks a numerically unresolved cluster, which may consist of distinct roots.</li>
 <li><b>Mode B.</b> The vertical axis is $\varepsilon$; the top plane ($\varepsilon=1$) holds the draggable points $q_i\in\mathbb{R}^2$; coloured trajectories $\varepsilon\mapsto\delta_\varepsilon(q_i)$ converge to the origin. The glyph at the origin is the flat limit: a <span style="color:#ff5d5d">red ball</span> for $\mathfrak m^2$ (not l.c.i.), a <span style="color:#6fd37a">green curve</span> for a curvilinear (l.c.i.) limit.</li>
 </ul>`,
 C: String.raw`
-<ol>
-<li><b>Étale versus flat.</b> The braid group lives in the complement of $\{\Delta=0\}$. A complex loop $P+\varepsilon e^{i\theta}\hat n$ transverse to $\{\Delta=0\}$ at a smooth point encircles it once (winding number $1$ of $\Delta$) and exchanges the two nearby roots (a generator $\sigma$). As $\varepsilon$ is decreased through the modulus of the nearest zero of $w\mapsto\Delta(P+w\hat n)$, the loop sweeps through a <i>non-reduced</i> $Z$ and then bounds a disc on which $\Delta\ne0$: the monodromy disappears. In $\mathrm{Conf}_d$ this is impossible, in $\mathrm{Hilb}_d(\mathbb A^1)=\mathbb A^d$ it is automatic.</li>
-<li><b>Contractibility by contraction.</b> The path $t\mapsto h_t(f)$ crosses the discriminant (all roots meet at $0$ for $t=0$), producing an explicit $\mathbb A^1$-null-homotopy of the space of supports. This is why allowing non-reduced $Z$ — i.e. flat rather than étale — is essential for the $\mathbb A^1$-homotopy theory of framed correspondences.</li>
-<li><b>Colliding points remember data.</b> Two points $a\pm\varepsilon u$ converge to the length-2 scheme $\mathrm{Spec}\,\mathbb C[\ell]/\ell^2$ at $a$ with tangent direction $[u]\in\mathbb P^1$: the exceptional divisor of $\mathrm{Hilb}_2(\mathbb A^2)=\mathrm{Bl}_\Delta(\mathbb A^2\times\mathbb A^2)/\mathfrak S_2$. For three points the limit depends on the <i>way</i> of approach: under homothety a non-collinear triple has Hilbert function $(1,2)$, hence limit $\mathfrak m^2=(x,y)^2$ with $\mu=3$; a collinear triple gives $(1,1,1)$ and a curvilinear limit; under the parabolic contraction the same triple gives $(y-\gamma x^2,x^3)$.</li>
-<li><b>The l.c.i. condition is intrinsic.</b> A support of a framed correspondence is $Z'=\phi^{-1}(Z_n)$ with $\phi:U\to V_n$, i.e. cut out by $n$ equations in the $n$-dimensional $U$, thus l.c.i. (Lemma [Frescheme], Remark [remlci]). The fat point $\mathfrak m^2$ needs $3$ generators in $\mathbb A^2$ and $4$ in $\mathbb A^3$: it is never a support, <b>for any</b> embedding dimension. It is nevertheless a flat limit of l.c.i. supports, so $\mathrm{Hilb}^{\rm lci}_3(\mathbb A^2)\subset\mathrm{Hilb}_3(\mathbb A^2)$ is open but not closed.</li>
-</ol>`,
+<ol><li><b>Loops and monodromy.</b> At a smooth discriminant point, a sufficiently small complex transverse loop gives a transposition. Larger loops, or loops near singular strata, can give other braid elements. The direction is the analytic discriminant gradient when nonzero; at a singular point the control uses the constant-term direction, not a purported normal. Winding and root tracking are numerical and are marked unresolved near the discriminant.</li>
+<li><b>Flat contraction.</b> The polynomial family $t^df(z/t)$ extends to $t=0$ and contracts $\mathrm{Hilb}_d(\mathbb A^1)=\mathbb A^d$ to $z^d$, through finite flat l.c.i. schemes. The roots remain distinct for every nonzero $t$ when the starting polynomial is square-free. Static multiplicities are decided by exact rational polynomial gcds, not by distances between plotted roots.</li>
+<li><b>Flat limits in the plane.</b> Homothety of a non-collinear triple has limit $(x,y)^2$; a collinear triple gives a curvilinear length-3 scheme. For weights $(1,2)$ and three distinct $x$-coordinates, interpolation gives $(y-\gamma x^2,x^3)$. Without that assumption the limit need not be curvilinear: $Q=\{(0,0),(0,1),(1,0)\}$ has limit $(x,y)^2$. Weighted and maximal-ideal Hilbert functions are different invariants.</li>
+<li><b>Scope of the l.c.i. restriction.</b> Under Convention 11.1, a framing is cut out by $n$ fibre coordinates in relative dimension $n$, and Lemma 11.6 / [Frescheme] gives a finite flat l.c.i. zero scheme. This is the setting of the $MGL$ support model. It is not a theorem about all Thom spectra: for $E=T\wedge\mathbb S_T$, the level-2 map $(x,y)\mapsto(x^2,xy,y^2)$ into $\mathbb A^3$ has the non-l.c.i. zero scheme $\operatorname{Spec}\mathbb C[x,y]/(x,y)^2$. Voevodsky’s description permits this general $E$-framed correspondence. The intrinsic failure of l.c.i. still prevents the scheme from entering the $MGL$ support model in any embedding dimension.</li></ol>`,
 D: String.raw`
 <ul>
 <li><b>Definition</b> of $\mathrm{Emb}_n(X,Y)$ and the forgetful maps $\widetilde{\mathrm{Fr}}^{MGL}_n\to B_n\to\mathrm{Emb}_n$ (§12).</li>
@@ -739,14 +768,14 @@ E: String.raw`
 <li>Only the real slice $(p,q,r)\in\mathbb R^3$ of $\mathbb C^d$ is drawn, with $d\in\{3,4\}$; the complex loop and the $\mathbb C^*$-structure are encoded in the inset, not in 3D.</li>
 <li>The model concerns $\mathrm{Hilb}^{\rm lci}_d(\mathbb A^n)$ for $n=1,2$ and $Y=\mathrm{pt}$. The stabilisation $n\to\infty$ and the Suslin complex $C_*$ are <i>not</i> displayed; Experiment 3 addresses the $n$-dependence.</li>
 <li>Contractibility of $\mathbb A^d$ is a trivial fact; its role here is conceptual (the support space is $\mathbb A^1$-contractible only because $Z$ may be non-reduced), not a computation of $M_{MGL}$.</li>
-<li>The numerical statement “limit is l.c.i.” relies on rank decisions with tolerance $10^{-8}$; exact collinearity is attained by the “make collinear” button, generic positions are robust.</li>
+<li>Ranks, relations and generator counts are computed over $\mathbb Q$ from the displayed finite-decimal coordinates. Dragging changes those rational inputs; a nearly collinear configuration is not silently identified with a collinear one. The displayed glyph remains a schematic picture of the resulting scheme.</li>
 </ul>`
 };
 
 THEORY.t3 = {
 lead: String.raw`<b>Intuition.</b> A finite set of points in the line has an <i>order</i>; two embeddings of the same abstract set may disagree on it, and one cannot interpolate between them inside the line without a collision. Adding a second dimension lets the points go <i>around</i> each other: the interpolation becomes a braid. The paper uses exactly this trick (with $t(t-1)z$ as the second coordinate, algebraic in $t$) to prove that remembering the embedding $Z\subset\mathbb A^n$ is unnecessary: $C_*\mathrm{Emb}\simeq C_*N\mathrm{Cor}^\Omega$.`,
 fidelity: String.raw`<table class="fid">
-<tr><td><span class="badge b-ex">exact</span></td><td>The family $r_i(z,t)=((1-t)z+t\beta_i(z),\,t(t-1)z,\,t)$ itself, the distances $d(t)$, the naive collisions, the braid word, the induced permutation; $n=1$, $m=1$, $X=Y=\mathrm{pt}$.</td></tr>
+<tr><td><span class="badge b-ex">exact</span></td><td>The polynomial family $r_i$ and its injectivity proof; pairwise collision times and endpoint permutation. Distance minima and tubes are sampled numerical displays; a braid word is a chosen resolution of simultaneous crossings; $n=1$, $m=1$, $X=Y=\mathrm{pt}$.</td></tr>
 <tr><td><span class="badge b-sh">shadow</span></td><td>Real points of $\mathbb A^2\times\mathbb A^1$ for real $t\in[0,1]$. The proof needs injectivity for all $t\in\mathbb A^1(\mathbb C)$; this also holds (see C) but is not drawn.</td></tr>
 <tr><td><span class="badge b-il">illustration</span></td><td>The braid <i>word</i> depends on a sign convention; the vertical stretching of the time axis; tube radii.</td></tr></table>`,
 A: String.raw`
@@ -762,14 +791,14 @@ B: String.raw`
 <li><b>Horizontal axis $x$</b>: the first coordinate $(1-t)z+t\beta(z)\in\mathbb A^1$ (the embedding). <b>Depth $y$</b>: the new coordinate $t(t-1)z$. <b>Vertical axis</b>: $t\in[0,1]$.</li>
 <li><b>Thick coloured strands</b>: the family $Z_1'$ of the object $(Z_1\subset\mathbb A^1)$; it starts at the positions $\iota_1(a)$ ($t=0$) and ends at $\iota_0(a)$ ($t=1$). <b>Thin translucent strands</b>: the family $Z_0'$, which only bulges. Each colour is one abstract point $a\in Z$ (so $\alpha$ is “same colour”).</li>
 <li><b>White lines</b>: the naive straight-line interpolation in $\mathbb A^1$; <b>red rings</b> mark its collisions.</li>
-<li><b>Slice plane</b> at height $t$ with the current points; insets: the $(x,y)$ plane and the plot of the minimum pairwise distance $d(t)$ for both paths.</li>
+<li><b>Slice plane</b> at height $t$ with the current points; insets: the $(x,y)$ plane and the plot of the sampled minimum pairwise distance $d(t)$ for both paths.</li>
 </ul>`,
 C: String.raw`
 <ol>
-<li><b>Injectivity from the second coordinate.</b> If $r(z,t)=r(z',t)$ then $t(t-1)(z-z')=0$. For $t\ne0,1$ this forces $z=z'$. For $t=0$ the first coordinate is $z$, for $t=1$ it is $\beta(z)$; both are injective. So $Z_i'(t)$ is an embedded copy of $Z_i$ for <i>every</i> $t\in\mathbb A^1(\mathbb C)$, hence $Z'_i\to X\times\mathbb A^1$ is a finite flat family of embedded subschemes — also when $Z_i$ is non-reduced (Lemma [lcicrit]).</li>
-<li><b>The naive path fails.</b> In $\mathbb A^1$ the straight line $(1-t)\iota_1+t\iota_0$ makes two points meet exactly when their orders differ; the number of collisions is the number of inversions of $\pi$ and the path leaves $\mathrm{Emb}_1$.</li>
+<li><b>Injectivity from the second coordinate.</b> If $r(z,t)=r(z',t)$ then $t(t-1)(z-z')=0$. For $t\ne0,1$ this forces $z=z'$. For $t=0$ the first coordinate is $z$, for $t=1$ it is $\beta(z)$; both are injective. For reduced points this proves injectivity for every complex $t$. For non-reduced schemes the closed l.c.i. embedding assertion uses [lcicrit], not pointwise injectivity alone. Consequently $Z'_i\to X\times\mathbb A^1$ is a finite flat family of embedded subschemes — also when $Z_i$ is non-reduced (Lemma [lcicrit]).</li>
+<li><b>The naive map fails to embed the fixed scheme.</b> The interpolation makes labelled points meet when their orders differ. Its scheme-theoretic image in the line can nevertheless be a finite flat family of l.c.i. schemes, hence remain in $\mathrm{Emb}_1$: swapping $\pm1$ gives $z^2-(1-2t)^2=0$, with a double point at $t=1/2$. What is lost is the specified isomorphism to the constant abstract scheme. The doubling construction preserves that isomorphism.</li>
 <li><b>Endpoints.</b> At $t=0$: the pair of embeddings $(\iota_1,\iota_0)$ stabilised into $\mathbb A^2$. At $t=1$: both objects equal $\iota_0\times0$, and $\gamma_0$ becomes the identity morphism — the simplex is degenerate, it lies in $\mathrm{Emb}$. This is $H_1=\mathrm{stab}\circ f\circ p$.</li>
-<li><b>Braid.</b> For real $t$ the strands form a braid in $\mathbb R^2\times[0,1]$ with permutation $\pi$ and at least $\mathrm{inv}(\pi)$ crossings in projection to the $(x,t)$-plane; the minimal distance never vanishes, which is exactly the statement that $H_t$ takes values in $\mathrm{Emb}_2$.</li>
+<li><b>Braid.</b> For real $t$ the strands form a braid in $\mathbb R^2\times[0,1]$ with endpoint permutation determined by the initial and final ranks (the one-line convention used in the readout) and at least $\mathrm{inv}(\pi)$ crossings in projection to the $(x,t)$-plane; the minimal distance never vanishes, which is exactly the statement that $H_t$ takes values in $\mathrm{Emb}_2$.</li>
 </ol>`,
 D: String.raw`
 <ul>
@@ -787,11 +816,11 @@ E: String.raw`
 };
 
 THEORY.t4 = {
-lead: String.raw`<b>Intuition.</b> A map from an $m$-dimensional source into a space $V$ meets a codimension-$c$ locus $Z$ in an $(m-c)$-dimensional set. If $m<c$ this expected dimension is negative: the probe can be slid off $Z$ and is homotopic to the base point. If $m=c$ the intersection is a finite set of points whose <i>count</i> is a rigid invariant. The paper converts the first alternative into <b>connectivity</b> (Lemma [pi0]) and the second into the reason why Segal’s machine needs a group completion unless a spare normal direction is available. Since the $n$-th layer probes with $\mathbb P^{\wedge n}$ against codimension $>n+i-d$, the slack is $i-d$ for every $n$ — whence the single threshold $\max(0,d)$.`,
+lead: String.raw`<b>Intuition.</b> General position suggests that a transverse inverse image has dimension $m-c$. A spare normal direction when $m<c$ motivates the connectivity input. Fibrancy also uses Additivity, the Segal machine, strict homotopy invariance and comparison maps. The exact index estimate is $c_{\min}=n+i-d+1$ with probe $m=n$, so $c_{\min}-m=i-d+1$. It is strictly positive at every $i\ge d$, giving the sufficient threshold $\max(0,d)$.`,
 fidelity: String.raw`<table class="fid">
 <tr><td><span class="badge b-ex">exact</span></td><td>The index bookkeeping of the chart: $c_{\min}(n,i)=n+i-d+1$, probe $m=n$, first fibrant level $\max(0,d)$, the recipe of Thm [mainbisp] as a function of $d$; the degree of $\phi$ for $m=c\in\{1,2\}$ (sign count / boundary winding number).</td></tr>
 <tr><td><span class="badge b-sh">shadow</span></td><td>The 3D lab is the topological (real, smooth, general-position) counterpart. The paper’s proof is algebraic: $X/(X-Z)\cong Z_+\wedge T^{c}$ locally and $\pi_0C_*\mathrm{Fr}(Z_+\wedge T^{c-m})=*$ for $c>m$ [GNP, A.1]. Real dimension $2m$ vs. $2c$ preserves the inequality $m<c$.</td></tr>
-<tr><td><span class="badge b-il">illustration</span></td><td>Specific wiggles, the push-off vector $w$, the “monoid of degrees” remark (an external input, not proved in the attached paper).</td></tr></table>`,
+<tr><td><span class="badge b-il">illustration</span></td><td>Specific wiggles, the push-off vector $w$, no universal identification of E-framed component monoids is asserted.</td></tr></table>`,
 A: String.raw`
 <p>Let $E$ have bounding constant $d$: $\mathrm{codim}(Z_{n,j}\subset V_{n,j})>n-d$ for all $n,j$. By the layer filtration (§3), $E=\operatorname{colim}_nL_nE$ and
 $$\begin{aligned}C_*\Theta^\infty(L_nE)_i&=C_*\underline{\mathrm{Hom}}(\mathbb P^{\wedge n},\mathrm{Fr}(E_n\wedge T^i)),\\ \mathrm{Fr}(E_n\wedge T^i)&=\operatorname{colim}_j\mathrm{Fr}\big(V_{n,j}\times\mathbb A^i/(V_{n,j}\times\mathbb A^i-Z_{n,j}\times0)\big).\end{aligned}$$
@@ -806,12 +835,10 @@ B: String.raw`
 <li><b>Chart</b>: rows $n$ (layer), columns $i$ (level); each cell shows $c_{\min}>m$ with $c_{\min}=n+i-d+1$, $m=n$. Green cells are guaranteed fibrant after a levelwise local fibrant replacement; the amber outline marks the first fibrant level $\max(0,d)$.</li>
 </ul>`,
 C: String.raw`
-<ol>
-<li><b>$m<c$: push-off.</b> Translating by $s\,w$ changes the normal components of $\phi$ by $s\,w_{\perp}\ne0$; $S_s=\emptyset$ for all but isolated $s$ (a $1$-parameter family can meet a codimension-$c$ locus in dimension $m+1-c\le0$ only at special times). Each probe is thus homotopic to the base point of $V/(V-Z)$, so $\pi_0=*$. Algebraically: the extra factor $\mathbb A^{c-m}$ in $Z_+\wedge T^{c-m}$.</li>
-<li><b>$m=c$: a rigid count.</b> $S$ is a finite set; folds of $\phi$ (raise $A$) create or annihilate points in pairs of opposite sign, but the algebraic degree is invariant. In the complex algebraic setting every point of $S$ has positive multiplicity, so the invariant is a <i>non-negative integer</i>: $\pi_0C_*\mathrm{Fr}$ is a monoid whose group completion is the Grothendieck–Witt group (external: Neshitov; over $\mathbb C$ it is $\mathbb Z$). The $\Gamma$-space is then <i>special but not very special</i>, and Segal’s machine produces $\Omega$-spectra only after group completion — hence the paper’s device of smashing with $S^1$ at the borderline (proof of Prop. [spectraeq], case $i=d$).</li>
-<li><b>$m>c$.</b> $S$ is a positive-dimensional submanifold; no obstruction to non-connectivity is removed.</li>
-<li><b>Why a single threshold.</b> Layer $n$ probes with $\mathbb P^{\wedge n}$ and sees codimension at least $n+i-d+1$. Both grow with $n$, so $i-d+1\ge1$ is independent of $n$: the whole spectrum becomes fibrant at the same level $\max(0,d)$.</li>
-</ol>`,
+<ol><li><b>Strict inequality.</b> The real smooth probe is an illustration of general position. A generic transverse inverse image has expected dimension $m-c$; in a generic one-parameter family with $m<c$, isolated intersections can occur when $m+1=c$. The algebraic connectivity statement uses the actual framed correspondence argument of Lemma 4.14 / [pi0], not the near-hit detector.</li>
+<li><b>Equality.</b> For the proper normal-coordinate maps used in the real model with $m=c$, the global signed degree is $1$. Pairs of opposite local signs may appear, without changing that degree. The winding displayed on the finite window is numerical. This does not identify the component monoid for arbitrary $E$. Very specialness requires a grouplike component monoid; nontriviality alone is not an obstruction. The familiar $GW(k)$ comparison concerns ordinary framed correspondences to the point under its own hypotheses, not general Thom coefficients.</li>
+<li><b>The index boundary.</b> At $i=d$, $c_{\min}=n+1$ and the strict inequality already holds. At $i=d-1$, the bound permits equality $c_{\min}=n$. The codimension parameter in the equality case of Proposition 4.18 / [spectraeq] must not be confused with the bounding constant $d$.</li>
+<li><b>Higher expected dimension.</b> If $m>c$, a transverse nonempty inverse image has dimension $m-c$. At a critical parameter transversality can fail, and the inverse image need not be a submanifold.</li></ol>`,
 D: String.raw`
 <ul>
 <li><b>Lemma</b> [pi0], <b>Lemma</b> [omegas], <b>Prop.</b> [spectraeq], <b>Theorem</b> [geommain], <b>Cor.</b> [omegass], [geomaincor], <b>Lemma</b> [homf].</li>
@@ -820,25 +847,20 @@ D: String.raw`
 <li><b>Lemma</b> [fdsh], [effsp]: $\Sigma^\infty_T(X/(X-Z))\in f_c(SH(k))$; $E\in f_{1-d}(SH(k))$, effective if $d\le1$.</li>
 </ul>`,
 E: String.raw`
-<ul>
-<li>The lab uses real smooth maps in $\mathbb R^3$; it illustrates the <i>dimension count</i> behind Lemma [pi0] but is not a proof, and the algebraic push-off is performed in $\mathbb A^{c-m}$-directions of $T^c$, not by translating a probe.</li>
-<li>Numerical support detection uses a distance threshold ($0.03$); $S$ at isolated values of $s$ may be missed or shown with finite width.</li>
-<li>The chart records the <i>sufficient</i> condition provided by the paper: $i<\max(0,d)$ does not claim that fibrancy fails for every $E$ — only that it is not guaranteed by the codimension count.</li>
-<li>“Monoid of effective degrees / group completion = $GW(k)$” is quoted from the literature (Neshitov; [GNP]) and is not a statement of the attached paper.</li>
-</ul>`
+<ul><li>The 3D probe is a real smooth illustration in a finite window. Its translations do not prove the motivic theorem.</li><li>The support detector displays near-hits at tolerance $0.03$, not certified zeros or a certificate of global emptiness. The surface colouring uses the wider visual tolerance $0.22$. The readout states these limits.</li><li>Red chart cells mean the theorem does not guarantee fibrancy at that level. They do not assert failure for every spectrum.</li><li>The displayed $n$-layer formula is for $T$-spectra. For $T^2$-spectra such as $MSL,MSp$, both normal-rank and suspension indexing must be reindexed; their $d=1$ examples still have the stated sufficient positive-level threshold.</li></ul>`
 };
 
 THEORY.t5 = {
 lead: String.raw`<b>Intuition.</b> The paper is a web of comparison maps between explicit models of one object, $E$. Which edges exist depends on how much structure $E$ carries: Thom ⟹ $\Theta^\infty$ route; symmetric + alternating contractible ⟹ three models agree; Convention [convention] ⟹ normal framings; $E=MGL$ ⟹ Hilbert schemes; $k=\bar k$, $\mathrm{char}\,0$ ⟹ topology. This tab makes these dependences explicit and interactive.`,
 fidelity: String.raw`<table class="fid">
-<tr><td><span class="badge b-ex">exact</span></td><td>Every node, arrow, label and hypothesis is transcribed from the statements of the attached paper.</td></tr>
+<tr><td><span class="badge b-ex">exact</span></td><td>Statements follow the cited paper. The toggles enforce implications of the MGL and Convention 11.1 assumptions. Construction edges and comparison maps are distinguished in their explanations; this is not a commutative diagram in a single category.</td></tr>
 <tr><td><span class="badge b-sh">shadow</span></td><td>“Green/grey” records whether the <i>stated hypotheses</i> hold, not whether the conclusion could be true by another argument.</td></tr>
 <tr><td><span class="badge b-il">illustration</span></td><td>Node placement; the identification of the “weight-$j$” columns with a single node $M^{\mathbb G}_E$.</td></tr></table>`,
 A: String.raw`
 <p>Objects (all after $C_*$ and levelwise local fibrant replacement $(-)^f$): $E$; $\Theta^\infty(E)$; $\Theta^\infty_{\rm sym}(E)$; $\mathrm{Fr}^E(S_T)$ with $\mathrm{Fr}^E_n(T^i)=\underline{\mathrm{Hom}}(\mathbb P^{\wedge n},T^i\wedge E_n)$; $M_E(X)=C_*\mathrm{Fr}^E(X_+\wedge\mathbb S)$; the bispectrum $M^{\mathbb G}_E(X)=(M_E(X_+\wedge\mathbb G_m^{\wedge j}))_j$; the normally framed variants $\widetilde M_E$; for $E=MGL$ the models $\mathrm{Emb}$, $N\mathrm{Cor}^\Omega$ and $E^{(-)}$.</p>
 <p>The main comparison diagram (Prop. [truefakezigzag], [fr=true], Thm [main]):
 $$\begin{aligned}&C_*\mathrm{Fr}^E(S_T)\xrightarrow{f}C_*\Theta^\infty_{\rm sym}(E)\xrightarrow{\xi}C_*\Theta^\infty(\Theta^\infty_{\rm sym}E)\\&\qquad\xleftarrow{C_*\Theta^\infty(\epsilon)}C_*\Theta^\infty(E)\xleftarrow{\eta}E .\end{aligned}$$
-All maps are levelwise local weak equivalences from level $\max(0,d)$ (or stable motivic equivalences).</p>`,
+The comparison maps in this zig-zag have the local/stable equivalence properties stated in the cited propositions. In particular, the unit $E\to C_*\Theta^\infty(E)$ is asserted to be a stable motivic equivalence, not generally a levelwise local equivalence.</p>`,
 B: String.raw`
 <ul>
 <li>Rounded boxes are objects; arrows are comparison maps with their citations. <span style="color:#6fd37a">Green</span> = all hypotheses hold; grey/dashed = hypotheses not satisfied in the current setting.</li>
@@ -978,7 +1000,7 @@ class Tab1 extends Tab {
       el('div', { class: 'ctl' }, el('div', { class: 'top', html: 'multiplicities $m_1,m_2,m_3$ (non-reduced support $\\Spec\\,k[z]/(z-z_j)^{m_j}$)' }),
         el('div', { class: 'btnrow' }, ...[0, 1, 2].map(j => { const s = el('select', { style: 'width:auto' }, ...[1, 2, 3].map(v => el('option', { value: v }, 'm' + (j + 1) + '=' + v))); s.onchange = () => { this.pts[j].m = +s.value; this.refresh(); }; this['msel' + j] = s; return s; })))));
     c.append(this.sec('Collapse radius (the analytic stand-in for “shrink the étale neighbourhood”)',
-      this.slider({ key: 'rho', label: '$\\rho$ (log scale)', min: 0.01, max: 8, value: 0.9, log: true, fmt: v => v.toFixed(3), onInput: () => this.refresh() })));
+      this.slider({ key: 'rho', label: '$\\rho$ (log scale)', min: 0.001, max: 8, value: 0.9, log: true, fmt: v => v.toFixed(3), onInput: () => this.refresh() })));
     c.append(this.sec('Second framing  $\\phi_1=\\phi_0+\\lambda\\phi_0^2$  with the <i>same</i> normal datum, and the straight-line homotopy  $\\phi_s=(1-s)\\phi_0+s\\phi_1$',
       this.slider({ key: 's', label: 'homotopy parameter $s$', min: 0, max: 1, step: 0.002, value: 0, onInput: () => this.refresh() }),
       this.slider({ key: 'A', label: '$|\\lambda|$ (log scale)', min: 0.05, max: 30, value: 0.5, log: true, fmt: v => v.toFixed(2), onInput: () => { this.scan = null; this.refresh(); } }),
@@ -1020,7 +1042,8 @@ class Tab1 extends Tab {
   }
   compute(NG, rho, s, full) {
     const pts = this.activePts(), R = this.R, lam = this.lam(); const sl = Cx.sc(lam, s);
-    const N2 = NG * NG, mask = new Uint8Array(N2), mod = new Float32Array(N2), arg = full ? new Float32Array(N2) : null;
+    const N2 = NG * NG, mask = new Uint8Array(N2), mod = new Float32Array(N2), arg = full ? new Float32Array(N2) : null, keep = new Uint8Array(N2);
+    const certified = rho < this.rhoCrit(s);
     const dx = 2 * R / (NG - 1);
     for (let j = 0; j < NG; j++) {
       const im = R - j * dx;
@@ -1030,7 +1053,7 @@ class Tab1 extends Tab {
         // phi = P (1 + s lam P)
         const qr = 1 + (sl[0] * pr - sl[1] * pi), qi = sl[0] * pi + sl[1] * pr;
         const fr = pr * qr - pi * qi, fi = pr * qi + pi * qr;
-        const k = j * NG + i; mod[k] = Math.hypot(fr, fi); if (full) arg[k] = Math.atan2(fi, fr); mask[k] = mod[k] < rho ? 1 : 0;
+        const k = j * NG + i; mod[k] = Math.hypot(fr, fi); if (full) arg[k] = Math.atan2(fi, fr); mask[k] = mod[k] < rho ? 1 : 0; keep[k] = certified && mask[k] && (sl[0]*pr-sl[1]*pi > -0.5) ? 1 : 0;
       }
     }
     const garb = this.garbageRoots(pts, s);
@@ -1056,35 +1079,16 @@ class Tab1 extends Tab {
     for (let t = 0; t < NG; t++) for (const k of [t, (NG - 1) * NG + t, t * NG, t * NG + NG - 1]) if (lab[k] >= 0) edge[lab[k]] = 1;
     let mixed = false, touches = false;
     for (let c = 0; c < nl; c++) { if (hasZ[c] && hasG[c]) mixed = true; if (hasZ[c] && edge[c]) touches = true; }
-    return { mod, arg, lab, hasZ, hasG, edge, nl, mixed, touches, garb, valid: !mixed && !touches, dx };
+    return { mod, arg, keep, lab, hasZ, hasG, edge, nl, mixed, touches, garb, valid: !mixed && !touches, dx };
   }
-  /* Exact admissible radius.  Components of {|phi_s|<rho} merge only at saddles of |phi_s|, i.e. at critical
+  /* Historical analytic motivation: components of {|phi_s|<rho} merge only at saddles of |phi_s|, i.e. at critical
      points c of phi_s with critical value |phi_s(c)|.  At c the two descent directions h satisfy
      Re(phi''(c) h^2 / phi(c)) < 0; Newton-flow  z' = -phi/phi'  (curves of constant arg phi) carries each
-     of them to a zero.  Union-find over the saddles in increasing order gives the first merge that joins a
+     of them to a zero.  The former numerical saddle-tracing approach was replaced by the closed-form quadratic criterion; it joins a
      point of Z with a garbage zero:  rho_crit(s).                                                      */
   exactCrit(s) {
-    if (s < 1e-6 || this.params.A < 1e-9) return { rho: Infinity, merges: [] };
-    const pts = this.activePts(), sl = Cx.sc(this.lam(), s);
-    const P = this.polyP(pts), D = P.length - 1, dP = [], d2P = [];
-    for (let k = 0; k < D; k++) dP.push(Cx.sc(P[k], D - k)); for (let k = 0; k < D - 1; k++) d2P.push(Cx.sc(dP[k], D - 1 - k));
-    const hor = (c, z) => { let r = [0, 0]; for (const a of c) r = Cx.add(Cx.mul(r, z), a); return r; };
-    const F = z => { const p = hor(P, z), dp = hor(dP, z), d2 = D >= 2 ? hor(d2P, z) : [0, 0]; const q = Cx.add([1, 0], Cx.mul(sl, p)), q1 = Cx.add([1, 0], Cx.sc(Cx.mul(sl, p), 2));
-      return { f: Cx.mul(p, q), f1: Cx.mul(dp, q1), f2: Cx.add(Cx.mul(d2, q1), Cx.sc(Cx.mul(sl, Cx.mul(dp, dp)), 2)) }; };
-    const Z = pts.map(q => [q.re, q.im]), G = this.garbageRoots(pts, s), all = Z.concat(G), nz = Z.length;
-    const par = all.map((_, i) => i), find = i => par[i] === i ? i : (par[i] = find(par[i])), hasZ = all.map((_, i) => i < nz), hasG = all.map((_, i) => i >= nz);
-    const merges = [];
-    this.critPts(pts, s).forEach(c => {
-      const { f, f1, f2 } = F(c), v = Cx.abs(f); if (v < 1e-9 || Cx.abs(f2) < 1e-9) return;
-      const w = Cx.div(f2, f), th = (Math.PI - Cx.arg(w)) / 2, dl = 0.01 * Math.min(1, 1 / Math.sqrt(Cx.abs(w)));
-      const ends = [0, Math.PI].map(sh => { let z = Cx.add(c, Cx.pol(dl, th + sh));
-        for (let it = 0; it < 6000; it++) { const e = F(z); if (Cx.abs(e.f) < 1e-9 * v) break; let st = Cx.div(e.f, e.f1); const L = Cx.abs(st); if (L > 0.03) st = Cx.sc(st, 0.03 / L); z = Cx.sub(z, st); }
-        let bi = -1, bd = Infinity; all.forEach((a, i) => { const d = Cx.abs(Cx.sub(a, z)); if (d < bd) { bd = d; bi = i; } }); return bd < 0.35 ? bi : -1; });
-      if (ends[0] >= 0 && ends[1] >= 0 && ends[0] !== ends[1]) merges.push({ v, a: ends[0], b: ends[1], c });
-    });
-    merges.sort((x, y) => x.v - y.v); let rho = Infinity;
-    for (const m of merges) { const a = find(m.a), b = find(m.b); if (a === b) continue; par[b] = a; hasZ[a] = hasZ[a] || hasZ[b]; hasG[a] = hasG[a] || hasG[b]; if (hasZ[a] && hasG[a] && !isFinite(rho)) rho = m.v; }
-    return { rho, merges };
+    const a=Math.abs(s)*this.params.A;
+    return {rho:a===0?Infinity:1/(4*a),merges:[],method:'quadratic lemniscate (closed form)'};
   }
   rhoCrit(s) { return this.exactCrit(s).rho; }
   runScan() {
@@ -1095,15 +1099,15 @@ class Tab1 extends Tab {
   drawScan() {
     const cv = this.scanCv, g = cv.getContext('2d'), W = cv.width, H = cv.height;
     g.clearRect(0, 0, W, H); g.fillStyle = 'rgba(13,17,23,.9)'; g.fillRect(0, 0, W, H);
-    g.fillStyle = '#97a5b7'; g.font = '11px sans-serif'; g.fillText('admissible radius  ρ*(s)  (log scale)   —  s ∈ [0,1]', 8, 13);
-    const X = s => 28 + s * (W - 40), Y = v => 128 - (Math.log10(clamp(v, 1e-2, 60)) + 2) / (Math.log10(60) + 2) * 100;
-    g.strokeStyle = '#26323f'; g.lineWidth = 1; for (const v of [0.01, 0.1, 1, 10]) { g.beginPath(); g.moveTo(28, Y(v)); g.lineTo(W - 12, Y(v)); g.stroke(); g.fillStyle = '#6c7a8c'; g.fillText(String(v), 2, Y(v) + 4); }
+    g.fillStyle = '#97a5b7'; g.font = '11px sans-serif'; g.fillText('ρcrit(s) = 1/(4 s |λ|)  —  log scale', 8, 13);
+    const X = s => 28 + s * (W - 40), Y = v => 128 - (Math.log10(clamp(v, 1e-4, 60)) + 4) / (Math.log10(60) + 4) * 100;
+    g.strokeStyle = '#26323f'; g.lineWidth = 1; for (const v of [0.0001, 0.001, 0.01, 0.1, 1, 10]) { g.beginPath(); g.moveTo(28, Y(v)); g.lineTo(W - 12, Y(v)); g.stroke(); g.fillStyle = '#6c7a8c'; g.fillText(String(v), 2, Y(v) + 4); }
     if (this.scan) {
       g.strokeStyle = '#5fd4c4'; g.lineWidth = 2; g.beginPath(); let started = false, mn = Infinity;
       this.scan.forEach((v, k) => { const s = k / (this.scan.length - 1); const vv = isFinite(v) ? v : 60; mn = Math.min(mn, vv); const x = X(s), y = Y(vv); if (!started) { g.moveTo(x, y); started = true; } else g.lineTo(x, y); });
       g.stroke();
       g.strokeStyle = '#f2b84b'; g.setLineDash([4, 3]); g.beginPath(); g.moveTo(28, Y(mn)); g.lineTo(W - 12, Y(mn)); g.stroke(); g.setLineDash([]);
-      g.fillStyle = '#f2b84b'; g.fillText('min ρ* = ' + mn.toFixed(3) + ' > 0', W - 118, Y(mn) - 5);
+      g.fillStyle = '#f2b84b'; g.fillText('ρ* = 1/(4|λ|) = ' + mn.toFixed(3), W - 118, Y(mn) - 5);
       this.rhoStar = mn;
     } else { g.fillStyle = '#6c7a8c'; g.fillText('press “scan admissible ρ*(s)”', 60, 70); }
     g.strokeStyle = '#ff7b7b'; g.lineWidth = 1; g.beginPath(); g.moveTo(X(this.params.s), 18); g.lineTo(X(this.params.s), 128); g.stroke();
@@ -1128,7 +1132,7 @@ class Tab1 extends Tab {
     for (let k = 0; k < NG * NG; k++) {
       const m = res.mod[k] / rho; const L = res.lab[k];
       let y, c;
-      if (L < 0) { y = H; c = [0.13, 0.16, 0.2]; }
+      if (!res.keep[k]) { y = H; c = L>=0 && res.hasZ[L] && res.hasG[L] ? [0.55,0.12,0.14] : [0.13, 0.16, 0.2]; }
       else {
         y = H * Math.pow(Math.min(m, 1), 0.85);
         const hue = psicol ? (() => { const i = k % NG, j = (k - i) / NG; const re = -this.R + i * res.dx, im = this.R - j * res.dx; return Cx.arg(this.psiOf(re, im)) / TAU; })() : res.arg[k] / TAU;
@@ -1154,7 +1158,7 @@ class Tab1 extends Tab {
       a.visible = a.visible;
     }
     /* garbage + critical */
-    const clear = grp => { while (grp.children.length) { const o = grp.children.pop(); o.geometry && o.geometry.dispose(); } };
+    const clear = disposeGroup;
     clear(this.garbage); clear(this.crit);
     this.nGarb = res.garb.length;
     if (P.showGarb) res.garb.forEach((z, i) => {
@@ -1170,7 +1174,7 @@ class Tab1 extends Tab {
       const ph = Cx.mul(pr, Cx.add([1, 0], Cx.mul(Cx.sc(this.lam(), s), pr))); const cv = Cx.abs(ph);
       if (cv < 1e-9) return;
       const mm = new THREE.Mesh(new THREE.TetrahedronGeometry(0.07), new THREE.MeshStandardMaterial({ color: 0x66ccff, emissive: 0x113355 })); mm.position.set(z[0], H * Math.pow(Math.min(cv / rho, 1), 0.85) + 0.04, -z[1]);
-      mm.userData.info = { title: 'Critical point $c$ of $\\phi_s$', html: '<p>$\\phi_s’(c)=0$, critical value $|\\phi_s(c)|=' + cv.toFixed(4) + '$. When $\\rho$ passes this value the two sublevel components adjacent to $c$ merge (a saddle of $|\\phi_s|$). If one contains a point of $Z$ and the other a garbage zero, the neighbourhood is no longer a legitimate framing neighbourhood of $Z$.</p>' };
+      mm.userData.info = { title: 'Critical point $c$ of $\\phi_s$', html: '<p>$\\phi_s’(c)=0$, critical value $|\\phi_s(c)|=' + cv.toFixed(4) + '$. For a nondegenerate critical point, this value can be a merging level of sublevel components. Degenerate critical points require the closed-form quadratic criterion used by the readout. If one contains a point of $Z$ and the other a garbage zero, the neighbourhood is no longer a legitimate framing neighbourhood of $Z$.</p>' };
       this.crit.add(mm);
     });
     /* spheres */
@@ -1187,7 +1191,7 @@ class Tab1 extends Tab {
     App.cur === this && App.readout([
       ['$\\deg Z=\\sum m_j$', deg, ''], ['$s$ / $\\rho$', s.toFixed(3) + ' / ' + rho.toFixed(3), ''],
       ['garbage zeros of $\\phi_s$', this.nGarb, this.nGarb ? 'wa' : ''],
-      ['$\\phi^{-1}(0)\\cap U=Z$ ?', exact ? 'yes' : 'NO: $\\rho\\ge\\rho_{crit}=' + ex.rho.toFixed(3) + '$', exact ? 'ok' : 'no'],
+      ['strict separating radius?', exact ? 'yes: chosen U contains only Z' : 'not certified: choose ρ < ' + ex.rho.toFixed(3), exact ? 'ok' : 'wa'],
       ['$\\rho_*=\\min_s\\rho_{crit}$', this.scan && isFinite(rstar) ? rstar.toFixed(3) : '—', this.scan && rho < rstar ? 'ok' : (this.scan ? 'no' : '')],
     ]);
     this.drawScan();
@@ -1206,14 +1210,14 @@ class Tab1 extends Tab {
   pointerMove(ray, d) {
     const p = new THREE.Vector3(); const pl = new THREE.Plane(new THREE.Vector3(0, 1, 0), -(this.H + 0.14));
     if (!ray.ray.intersectPlane(pl, p)) return;
-    const q = this.pts[d.idx]; q.re = clamp(p.x, -1.9, 1.9); q.im = clamp(-p.z, -1.9, 1.9); this.scan = null; this.refresh();
+    const q = this.pts[d.idx], re=clamp(p.x,-1.9,1.9), im=clamp(-p.z,-1.9,1.9); if(this.activePts().some((a,j)=>j!==d.idx&&Math.hypot(a.re-re,a.im-im)<0.02))return; q.re = re; q.im = im; this.scan = null; this.refresh();
   }
   terrainInfo(h) {
-    const z = [h.point.x, -h.point.z]; const pts = this.activePts(); let pr = [1, 0];
-    for (const q of pts) for (let k = 0; k < q.m; k++) pr = Cx.mul(pr, [z[0] - q.re, z[1] - q.im]);
-    const ph = Cx.mul(pr, Cx.add([1, 0], Cx.mul(Cx.sc(this.lam(), this.params.s), pr)));
-    const rho = this.params.rho; const inside = Cx.abs(ph) < rho;
-    return { title: 'Point $z$ of the source plane', html: '<p>$z=' + z[0].toFixed(3) + (z[1] >= 0 ? '+' : '') + z[1].toFixed(3) + 'i$, &nbsp; $\\phi_s(z)=' + ph[0].toExponential(2) + (ph[1] >= 0 ? '+' : '') + ph[1].toExponential(2) + 'i$, &nbsp; $|\\phi_s|/\\rho=' + (Cx.abs(ph) / rho).toFixed(3) + '$.</p><p>' + (inside ? 'This point lies in the sublevel set $\\{|\\phi_s|<\\rho\\}$, so the collapse $\\Theta\\circ\\phi_s$ sends it to the point $w=\\phi_s(z)$ of the Thom sphere (hue $=\\arg$).' : 'This point lies on the plateau $|\\phi_s|\\ge\\rho$: the Pontryagin–Thom collapse sends it to the <b>base point</b> of $V/(V-Z_1)$. Points outside the neighbourhood $U$ carry no information.') + '</p>' };
+    const z=[h.point.x,-h.point.z],pts=this.activePts();let P=[1,0];
+    for(const q of pts)for(let k=0;k<q.m;k++)P=Cx.mul(P,[z[0]-q.re,z[1]-q.im]);
+    const aP=Cx.mul(Cx.sc(this.lam(),this.params.s),P),f=Cx.mul(P,Cx.add([1,0],aP)),r=this.params.rho;
+    const certified=r<this.rhoCrit(this.params.s),inside=certified&&Cx.abs(f)<r&&aP[0]>-.5;
+    return {title:'A point of the source plane',html:'<p>$z='+z[0].toFixed(3)+(z[1]>=0?'+':'')+z[1].toFixed(3)+'i$, $|\\phi_s(z)|/\\rho='+(Cx.abs(f)/r).toFixed(3)+'$.</p><p>'+(inside?'This point is in the chosen pure neighbourhood U. Its image is the radially reparametrised point Θ(φ_s(z)) of the Thom sphere.':certified?'This point is outside the chosen U, including any component containing an unwanted zero. The collapse sends it to the base point.':'The chosen radius is not strictly separating. This is a diagnostic picture; no collapse representing only Z is asserted. Reduce ρ.')+'</p>'};
   }
   zeroInfo(j) {
     const q = this.pts[j], c = this.leadCoef(j);
@@ -1221,7 +1225,7 @@ class Tab1 extends Tab {
     return { title: 'Point $z_' + (j + 1) + '$ of the support $Z$, multiplicity $m=' + q.m + '$', html: '<p>Local scheme $\\Spec\\,\\mathbb{C}[z]/(z-z_' + (j + 1) + ')^{' + q.m + '}$ — the connected component of the l.c.i. scheme $Z’=U\\times_{V_1}Z_1$ (Lemma <code>Frescheme</code>). The framing is $\\phi=(z-z_j)^{m}\\,a(z)$ with $a$ a unit near $z_j$.</p><p>Normal datum: ' + jet + '. The colour wheel winds $' + q.m + '$ time(s) around the pit = local degree of the collapse.</p><p><i>Drag</i> this sphere in the plane to move the support.</p>' };
   }
   arrowInfo(j) {
-    return { title: 'Normal datum $N(\\phi)$ at $z_' + (j + 1) + '$', html: '<p>$N(\\phi):N_{Z’/U}\\to(\\pi\\phi\\, i)^*V_1$ is the isomorphism dual to $J/J^2\\otimes\\mathcal O_{Z’}\\to I/I^2$ (Remark <code>Nphi</code>, Lemma <code>Nphi12</code>(1)). In the trivialisation $N=\\mathcal O_{Z’}\\cdot\\overline{P_Z}$ it is multiplication by the class of the unit $a$ in $\\mathcal O_{Z’}^\\times$. The arrow shows its value at $z_j$ (direction $=$ phase, length $\\sim\\log|\\cdot|$).</p><p><b>It does not depend on $s$</b>: the whole family $\\phi_s$ has the same normal datum.</p>' };
+    return { title: 'Normal datum $N(\\phi)$ at $z_' + (j + 1) + '$', html: '<p>$N(\\phi):N_{Z’/U}\\to(\\pi\\phi\\, i)^*V_1$ is the isomorphism dual to $J/J^2\\otimes\\mathcal O_{Z’}\\to I/I^2$ (Remark <code>Nphi</code>, Lemma <code>Nphi12</code>(1)). In the local conormal generator $(z-z_j)^{m_j}$, write $\\phi=(z-z_j)^{m_j}b_j$. The normal map is encoded by $b_j$ modulo $(z-z_j)^{m_j}$. The arrow shows only its reduced value $b_j(z_j)$, not the higher jet (direction $=$ phase, length $\\sim\\log|\\cdot|$).</p><p><b>It does not depend on $s$</b>: the whole family $\\phi_s$ has the same normal datum.</p>' };
   }
   update(t, dt) {
     if (this.playing) {
@@ -1244,42 +1248,11 @@ class Tab1 extends Tab {
 /* flat limit under weighted contraction (x,y) -> (eps^wx x, eps^wy y), eps -> 0, of a finite point set Q in A^2:
    the ideal generated by the TOP weighted-degree forms of I(Q).  Returns Hilbert function, bases of J_k, and
    the minimal generators of J (degrees).  lci  <=>  mu(J)=2.                                                  */
-function limitIdeal(Q, wx, wy) {
-  const l = Q.length, D = l * Math.max(wx, wy) + 1, tol = 1e-8;
-  const mons = [];
-  for (let a = 0; a <= D; a++) for (let b = 0; b <= D; b++) { const w = a * wx + b * wy; if (w <= D) mons.push({ a, b, w }); }
-  mons.sort((m, n) => m.w - n.w || m.b - n.b);
-  const byDeg = []; mons.forEach((m, i) => { (byDeg[m.w] = byDeg[m.w] || []).push(i); });
-  const val = (m, pt) => Math.pow(pt[0], m.a) * Math.pow(pt[1], m.b);
-  const J = [], H = [];
-  for (let k = 0; k <= D; k++) {
-    const cols = []; mons.forEach((m, i) => { if (m.w <= k) cols.push(i); });
-    const sc = cols.map(i => { let mx = 0; Q.forEach(pt => { mx = Math.max(mx, Math.abs(val(mons[i], pt))); }); return mx > 0 ? mx : 1; });
-    const A = Q.map(pt => cols.map((i, c) => val(mons[i], pt) / sc[c]));
-    const N = nullspace(A, cols.length, tol);
-    const degk = byDeg[k] || [];
-    const rows = N.map(v => degk.map(i => { const c = cols.indexOf(i); return v[c] / sc[c]; }));
-    rows.forEach(r => { let mx = 0; r.forEach(x => { mx = Math.max(mx, Math.abs(x)); }); if (mx > 0) for (let i = 0; i < r.length; i++) r[i] /= mx; });
-    const rr = rows.length ? rrefRows(rows, degk.length, 1e-7) : { basis: [], piv: [] };
-    J[k] = { mons: degk.map(i => mons[i]), basis: rr.basis }; H[k] = degk.length - rr.piv.length;
-  }
-  const gens = [];
-  for (let k = 0; k <= D; k++) {
-    const idx = {}; J[k].mons.forEach((m, i) => { idx[m.a + ',' + m.b] = i; });
-    const S = [];
-    [[wx, 1, 0], [wy, 0, 1]].forEach(([w, da, db]) => {
-      if (k - w < 0 || !J[k - w]) return;
-      J[k - w].basis.forEach(b => { const v = new Array(J[k].mons.length).fill(0); J[k - w].mons.forEach((m, i) => { const t = idx[(m.a + da) + ',' + (m.b + db)]; if (t !== undefined) v[t] += b[i]; }); S.push(v); });
-    });
-    const dS = rankOf(S, J[k].mons.length, 1e-7), mu = J[k].basis.length - dS;
-    for (let i = 0; i < mu; i++) gens.push(k);
-  }
-  return { H: H.slice(0, D + 1), J, gens, mu: gens.length, length: H.reduce((a, b) => a + b, 0), D };
-}
+function limitIdeal(points,wx,wy) { return exactLimitIdeal(points,wx,wy); }
 
 class Tab2 extends Tab {
   constructor() {
-    super('t2', '2', 'Supports · Hilbert scheme', 'Hilbert scheme of l.c.i. supports: discriminant, monodromy, contraction, flat limits');
+    super('t2', '2', 'MGL supports · Hilbert scheme', 'MGL support model: discriminant, monodromy, contraction and flat limits');
     this.home = { theta: 0.85, phi: 1.0, radius: 8.0, target: [0, 0.1, 0] };
     this.mode = 'A';
   }
@@ -1405,11 +1378,11 @@ class Tab2 extends Tab {
     A.append(this.sec('Contraction: the $\\mathbb{A}^1$-homotopy $z\\mapsto tz$ (coefficients $a_j\\mapsto t^ja_j$)',
       this.slider({ key: 'hom', label: 'homothety parameter $t$', min: 0, max: 1, step: 0.002, value: 1, onInput: () => { this.resetLoop(); this.refresh(); } }),
       el('div', { class: 'btnrow' }, this.btn('▶ contract $t:1\\to0$', () => { this.contrPlay = true; this.contrT0 = performance.now(); }))));
-    A.append(this.sec('Complex loop around the discriminant: $P(\\theta)=P+\\varepsilon e^{i\\theta}\\,\\hat n$',
+    A.append(this.sec('Complex loop (gradient / constant-term direction): $P(\\theta)=P+\\varepsilon e^{i\\theta}\\,\\hat n$',
       this.slider({ key: 'eps', label: 'loop radius $\\varepsilon$', min: 0.01, max: 1.5, step: 0.005, value: 0.35, onInput: () => { this.resetLoop(); this.refresh(); } }),
       el('div', { class: 'btnrow' }, this.btn('▶ run loop', () => this.startLoop()), this.btn('clear trails', () => { this.resetLoop(); this.refresh(); })),
-      el('p', { class: 'ref', html: '$\\hat n$ is the real unit normal to $\\{\\Delta=0\\}$ at $P$. The loop lives in $\\mathbb{C}^d$; only its real shadow is drawn in 3D, the roots are drawn in the complex plane (inset).' })));
-    A.append(this.sec('What to try', el('ol', { html: '<li>Choose $d=4$, snap to the double root. The $(2,1,1)$ surface passes through $P$.</li><li>Run the loop with small $\\varepsilon$ (no swap), then increase $\\varepsilon$ past the modulus of the nearest zero of $w\\mapsto\\Delta(P+w\\hat n)$ (for $P$ on the surface: any $\\varepsilon>0$): the winding number of $\\Delta$ jumps to $\\ge1$ and two roots interchange (a braid generator $\\sigma$).</li><li>Shrink $t$: all roots fly to $0$ <i>through</i> the discriminant: the support is deformed to $\\Spec\\,\\mathbb C[z]/z^d$ inside $\\mathrm{Hilb}_d$.</li>' })));
+      el('p', { class: 'ref', html: 'The direction is the normalised analytic gradient of Δ when nonzero; at singular points it is the constant-term direction. At a singular discriminant point no normal is asserted. The loop lives in $\\mathbb{C}^d$; only its real shadow is drawn in 3D, the roots are drawn in the complex plane (inset).' })));
+        A.append(this.sec('What to try',el('ol',{html:'<li>Snap to a smooth double-root point. A sufficiently small transverse complex loop swaps the two nearby roots.</li><li>Off the discriminant, a sufficiently small loop has no swap; increasing its radius can change monodromy. At singular strata other permutations can occur. Winding and tracking are numerical; loops too close to the discriminant are marked unresolved.</li><li>Contract the polynomial. Static square-freeness is decided exactly; distinct roots remain distinct for every nonzero contraction parameter.</li>'})));
     c.append(A);
     /* ---- B ---- */
     const Bx = this.boxB = el('div');
@@ -1417,16 +1390,16 @@ class Tab2 extends Tab {
     Bx.append(this.select({ key: 'npts', label: 'number of points $d$', options: [['2', '2'], ['3', '3']], value: '3', onChange: () => this.refresh() }));
     Bx.append(this.select({ key: 'wt', label: 'approach (weights of the contraction)', options: [['11', 'homothetic:  (x,y) ↦ ε·(x,y)'], ['12', 'parabolic:  (x,y) ↦ (ε·x, ε²·y)']], value: '11', onChange: () => this.refresh() }));
     Bx.append(this.slider({ key: 'eps2', label: '$\\varepsilon$', min: 0, max: 1, step: 0.002, value: 0.6, onInput: () => this.refresh() }));
-    Bx.append(el('div', { class: 'btnrow' }, this.btn('▶ contract', () => { this.contr2 = true; this.c2T0 = performance.now(); }), this.btn('make collinear', () => { this.Q = [[-1.1, -0.2], [0.1, 0.25], [1.3, 0.7]]; this.Q[1][1] = (this.Q[0][1] + this.Q[2][1]) / 2 + 0 * 1; const s = (this.Q[2][1] - this.Q[0][1]) / (this.Q[2][0] - this.Q[0][0]); this.Q[1][1] = this.Q[0][1] + s * (this.Q[1][0] - this.Q[0][0]); this.refresh(); }), this.btn('generic triple', () => { this.Q = [[-1.0, -0.5], [0.25, 0.95], [1.15, -0.25]]; this.refresh(); }), this.btn('parabola triple', () => { this.Q = [[-1, 0.8], [0.1, 0.01], [1.2, 1.15]]; this.refresh(); })));
-    Bx.append(this.sec('Result of the exact computation', el('div', { id: 't2-res', class: 'ref' })));
-    Bx.append(this.sec('What to try', el('ol', { html: '<li>$d=2$: the limit remembers the direction of approach — the exceptional divisor $\\mathbb{P}^1\\times\\mathbb{A}^2$ of $\\mathrm{Hilb}_2(\\mathbb{A}^2)=\\mathrm{Bl}_\\Delta(\\mathbb{A}^2\\times\\mathbb{A}^2)/\\mathfrak S_2$.</li><li>$d=3$, homothetic, generic triple: limit $=\\mathfrak m^2=(x,y)^2$, three generators, <b>not l.c.i.</b></li><li>Switch to parabolic contraction: the same triple now has a curvilinear (l.c.i.) limit $(y-\\gamma x^2,x^3)$.</li><li>Make the triple collinear: curvilinear limit $(\\ell,\\mathfrak m^3)$.</li>' })));
+    Bx.append(el('div', { class: 'btnrow' }, this.btn('▶ contract', () => { this.contr2 = true; this.c2T0 = performance.now(); }), this.btn('make collinear', () => { this.Q = [[-1,-0.5],[0,0],[1,0.5]]; this.refresh(); }), this.btn('generic triple', () => { this.Q = [[-1.0, -0.5], [0.25, 0.95], [1.15, -0.25]]; this.refresh(); }), this.btn('parabola triple', () => { this.Q = [[-1, 0.8], [0.1, 0.01], [1.2, 1.15]]; this.refresh(); })));
+    Bx.append(this.sec('Exact algebra of the finite-decimal input', el('div', { id: 't2-res', class: 'ref' })));
+    Bx.append(this.sec('What to try', el('ol', { html: '<li>$d=2$: the limit remembers the direction of approach — the exceptional divisor $\\mathbb{P}^1\\times\\mathbb{A}^2$ of $\\mathrm{Hilb}_2(\\mathbb{A}^2)=\\mathrm{Bl}_\\Delta(\\mathbb{A}^2\\times\\mathbb{A}^2)/\\mathfrak S_2$.</li><li>$d=3$, homothetic, generic triple: limit $=\\mathfrak m^2=(x,y)^2$, three generators, <b>not l.c.i.</b></li><li>Switch to parabolic contraction: if the three x-coordinates are distinct, the triple has a curvilinear (l.c.i.) limit $(y-\\gamma x^2,x^3)$.</li><li>Make the triple collinear: curvilinear limit $(\\ell,\\mathfrak m^3)$.</li>' })));
     c.append(Bx); this.boxB.hidden = true; math(c);
   }
   snap(kind) {
     const d = +this.params.d, S = this.sliders;
-    if (d === 3) { const t = 0.7; const v = { '211': [-3 * t * t, 2 * t * t * t], '22': [-3 * t * t, 2 * t * t * t], '31': [0, 0], '4': [0, 0] }[kind]; S.p.set(v[0], true); S.q.set(v[1], true); S.r.set(0, true); this.resetLoop(); this.refresh(); return; }
+    if (d === 3) { const t = 0.7; const v = { '211': [-3 * t * t, 2 * t * t * t], '22': [-3 * t * t, 2 * t * t * t], '31': [0, 0], '4': [0, 0] }[kind]; v.forEach((x,i)=>v[i]=+x.toFixed(12)); S.p.set(v[0], true); S.q.set(v[1], true); S.r.set(0, true); this.resetLoop(); this.refresh(); return; }
     const t = 0.6, u = -0.8; const v = { '211': [u - 3 * t * t, 2 * t * t * t - 2 * t * u, t * t * u], '22': [-2 * t * t, 0, t * t * t * t], '31': [-6 * 0.55 * 0.55, 8 * 0.55 * 0.55 * 0.55, -3 * 0.55 * 0.55 * 0.55 * 0.55], '4': [0, 0, 0] }[kind];
-    S.p.set(v[0], true); S.q.set(v[1], true); S.r.set(v[2]); this.resetLoop(); this.refresh();
+    v.forEach((x,i)=>v[i]=+x.toFixed(12)); S.p.set(v[0], true); S.q.set(v[1], true); S.r.set(v[2]); this.resetLoop(); this.refresh();
   }
   /* ================= numerics for mode A ================= */
   deg() { return +this.params.d; }
@@ -1456,14 +1429,14 @@ class Tab2 extends Tab {
     return parts.sort((a, b) => b - a);
   }
   resetLoop() { this.loop = { on: false, th: 0, wind: 0, lastArg: null, perm: null, done: false, z0: null }; this.tracks = null; }
-  normalHat(E) { // real unit gradient of Delta at E
-    const g = [0, 0, 0], h = 1e-4, x = E.slice();
-    for (let i = 0; i < (this.deg() === 4 ? 3 : 2); i++) { const a = x.slice(), b = x.slice(); a[i] += h; b[i] -= h; g[i] = (this.realDisc(a) - this.realDisc(b)) / (2 * h); }
-    const n = Math.hypot(...g); return n > 1e-9 ? g.map(v => v / n) : [1, 0, 0];
+  normalHat(E) {
+    const [p,q,r]=E,g=this.deg()===3?[-12*p*p,-54*q,0]:[-256*p*r*r+144*q*q*r+64*p*p*p*r-12*p*p*q*q,288*p*q*r-108*q*q*q-8*p*p*p*q,768*r*r-256*p*p*r+144*p*q*q+16*p*p*p*p];
+    const n=Math.hypot(...g);return n>1e-10?g.map(x=>x/n):null;
   }
-  startLoop() { this.resetLoop(); this.loop.on = true; this.tracks = null; this.loop.n = this.normalHat(this.effective()); this.stepLoop(0); }
+  loopDirection(E){return this.normalHat(E)||(this.deg()===4?[0,0,1]:[0,1,0]);}
+  startLoop() { this.resetLoop(); this.loop.on = true; this.tracks = null; this.loop.n = this.loopDirection(this.effective()); this.loop.unsafe=false; this.stepLoop(0); }
   loopParam(th) {
-    const E = this.effective(), n = this.loop.n || this.normalHat(E), e = this.params.eps, c = Math.cos(th), s = Math.sin(th);
+    const E = this.effective(), n = this.loop.n || this.loopDirection(E), e = this.params.eps, c = Math.cos(th), s = Math.sin(th);
     return [0, 1, 2].map(i => [E[i] + e * c * n[i], e * s * n[i]]);
   }
   stepLoop(th) {
@@ -1471,7 +1444,7 @@ class Tab2 extends Tab {
     if (!this.tracks) this.tracks = R.map((z, i) => ({ z, trail: [z.slice()], col: ['#ff6b6b', '#5fd4c4', '#f2b84b', '#a78bfa'][i] }));
     else R.forEach((z, i) => { this.tracks[i].z = z; this.tracks[i].trail.push(z.slice()); if (this.tracks[i].trail.length > 700) this.tracks[i].trail.shift(); });
     if (!this.loop.z0) this.loop.z0 = R.map(z => z.slice());
-    const D = this.disc(P), a = Cx.arg(D);
+    const D = this.disc(P), a = Cx.arg(D); let sep=Infinity;for(let i=0;i<R.length;i++)for(let j=0;j<i;j++)sep=Math.min(sep,Cx.abs(Cx.sub(R[i],R[j])));this.loop.unsafe=this.loop.unsafe||R.some(z=>z.some(x=>!Number.isFinite(x)))||sep<1e-5||Cx.abs(D)<1e-12;
     if (this.loop.lastArg !== null) { let da = a - this.loop.lastArg; while (da > Math.PI) da -= TAU; while (da < -Math.PI) da += TAU; this.loop.wind += da / TAU; }
     this.loop.lastArg = a; this.loop.D = D; this.loop.P = P;
   }
@@ -1487,7 +1460,7 @@ class Tab2 extends Tab {
     this.Pm.position.copy(this.P2V(E[0], E[1], E[2])); this.P0m.position.copy(this.P2V(this.params.p, this.params.q, sw ? this.params.r : 0)); this.P0m.visible = this.params.hom < 0.999;
     const pts = []; for (let k = 0; k <= 60; k++) { const h = k / 60; pts.push(this.P2V(this.params.p * h * h, this.params.q * h * h * h, sw ? this.params.r * h * h * h * h : 0)); }
     this.pathLine.geometry.dispose(); this.pathLine.geometry = new THREE.BufferGeometry().setFromPoints(pts); this.pathLine.visible = this.params.hom < 0.999 || true;
-    const n = this.normalHat(E); const e = this.params.eps; const sp = [this.P2V(E[0] - e * n[0], E[1] - e * n[1], E[2] - e * n[2]), this.P2V(E[0] + e * n[0], E[1] + e * n[1], E[2] + e * n[2])];
+    const n = this.loopDirection(E); const e = this.params.eps; const sp = [this.P2V(E[0] - e * n[0], E[1] - e * n[1], E[2] - e * n[2]), this.P2V(E[0] + e * n[0], E[1] + e * n[1], E[2] + e * n[2])];
     this.loopLine.geometry.dispose(); this.loopLine.geometry = new THREE.BufferGeometry().setFromPoints(sp);
     if (!this.loop.on && !this.loop.done) { const R = this.solve(E.map(x => [x, 0])); if (!this.tracks || this.tracks.length !== R.length) this.tracks = R.map((z, i) => ({ z, trail: [], col: ['#ff6b6b', '#5fd4c4', '#f2b84b', '#a78bfa'][i] })); else R.forEach((z, i) => { this.tracks[i].z = z; }); }
     this.drawRoots(); this.readoutA();
@@ -1495,10 +1468,10 @@ class Tab2 extends Tab {
   legendOn() { return true; }
   readoutA() {
     const E = this.effective(), P = this.loop.on || this.loop.done ? this.loop.P : E.map(x => [x, 0]); const R = this.tracks ? this.tracks.map(t => t.z) : [];
-    const Dv = this.disc(E.map(x => [x, 0]))[0]; const parts = this.partition(R.length ? R : this.solve(E.map(x => [x, 0]))); const nreal = (R.length ? R : []).filter(z => Math.abs(z[1]) < 1e-6).length;
+    const Dv = this.disc(E.map(x => [x, 0]))[0]; const onLoop=this.loop.on||this.loop.done; const parts = onLoop ? this.partition(R) : exactParts(this.params); const nreal = (R.length ? R : []).filter(z => Math.abs(z[1]) < 1e-6).length;
     const rows = [['$d$ / $t$', this.deg() + ' / ' + this.params.hom.toFixed(3), ''], ['real $\\Delta(P)$', Dv.toExponential(2), Math.abs(Dv) < 1e-3 ? 'wa' : ''],
-      ['multiplicities of $Z$', parts.join(' + '), parts.some(x => x > 1) ? 'wa' : 'ok'], ['étale?', parts.every(x => x === 1) ? 'yes ($Z\\notin$ discr.)' : 'no — non-reduced', parts.every(x => x === 1) ? 'ok' : 'wa']];
-    if (this.loop.on || this.loop.done || (this.loop.wind !== 0)) rows.push(['winding of $\\Delta$ on loop', this.loop.wind.toFixed(2), Math.abs(this.loop.wind) > 0.5 ? 'wa' : '']);
+      [onLoop?'visual clusters (numerical)':'multiplicities (exact decimal data)', parts.join(' + '), parts.some(x => x > 1) ? 'wa' : 'ok'], ['étale?', onLoop?'not certified during numerical loop':parts.every(x => x === 1)?'yes (exact square-free test)':'no (exact repeated factor)', !onLoop&&parts.every(x => x === 1)?'ok':'wa']];
+    if (this.loop.on || this.loop.done || (this.loop.wind !== 0)) rows.push(['winding of $\\Delta$ on loop', this.loop.unsafe?'unresolved near discriminant':this.loop.wind.toFixed(2)+' (numerical)', 'wa']);
     if (this.loop.perm) rows.push(['monodromy of roots', this.loop.perm, this.loop.perm === 'identity' ? '' : 'wa']);
     App.cur === this && App.readout(rows);
   }
@@ -1528,28 +1501,28 @@ class Tab2 extends Tab {
       this.trajs[i].geometry.dispose(); this.trajs[i].geometry = new THREE.BufferGeometry().setFromPoints(pts);
     }
     this.slice.position.y = eps * H;
-    const res = limitIdeal(Q, wx, wy); this.res = res; this.drawGlyph(res, Q, wx, wy);
+    const res = limitIdeal(Q, wx, wy); this.res = res; if(res.invalid){disposeGroup(this.glyph);setHTML($('#t2-res'),'<p>'+res.reason+'</p>');if(App.cur===this)App.readout([['input',res.reason,'wa']]);return;} this.drawGlyph(res, Q, wx, wy);
     const lci = res.mu === 2, deg = Q.length;
     const gensTxt = res.gens.length ? res.gens.join(', ') : '—';
     const box = $('#t2-res'); if (box) {
-      setHTML(box, '<p>Hilbert function of the limit scheme: $H=(' + res.H.slice(0, Math.max(...res.H.map((h, i) => h ? i : 0)) + 1).join(',') + ')$ &nbsp;(length $' + res.length + '$).</p>' +
+      setHTML(box, '<p>Weighted Hilbert function of the limit scheme: $H=(' + res.H.slice(0, Math.max(...res.H.map((h, i) => h ? i : 0)) + 1).join(',') + ')$ &nbsp;(length $' + res.length + '$).</p>' +
         '<p>Minimal generators of $I_0=\\mathrm{in}(I)$ in weighted degrees: $(' + gensTxt + ')$, so $\\mu(I_0)=' + res.mu + '$.</p>' +
-        '<p><b>' + (lci ? 'l.c.i. (complete intersection in $\\mathbb A^2$): a legitimate support of a level-2 framed correspondence.' : 'NOT l.c.i. ($\\mu=' + res.mu + '>2=\\dim$): never the support of an $E$-framed correspondence (Lemma <code>Frescheme</code>).') + '</b></p>');
+        '<p><b>' + (lci ? 'l.c.i. (complete intersection in $\\mathbb A^2$): eligible for the MGL support model.' : 'NOT l.c.i. ($\\mu=' + res.mu + '>2=\\dim$): excluded from the rank-n bundle model of Convention 11.1 and from the MGL support model; not excluded for arbitrary Thom spectra.') + '</b></p>');
       math(box);
     }
-    App.cur === this && App.readout([['$d=\\deg Z$', deg, ''], ['weights $(w_x,w_y)$', '(' + wx + ',' + wy + ')', ''], ['$\\varepsilon$', eps.toFixed(3), ''], ['Hilbert function', res.H.filter((h, i) => i <= 4).join(','), ''], ['$\\mu(I_0)$', res.mu, lci ? 'ok' : 'no'], ['limit l.c.i.?', lci ? 'yes' : 'NO', lci ? 'ok' : 'no']]);
+    App.cur === this && App.readout([['$d=\\deg Z$', deg, ''], ['weights $(w_x,w_y)$', '(' + wx + ',' + wy + ')', ''], ['$\\varepsilon$', eps.toFixed(3), ''], ['weighted Hilbert function', res.H.filter((h, i) => i <= 4).join(','), ''], ['$\\mu(I_0)$', res.mu, lci ? 'ok' : 'no'], ['limit l.c.i.?', lci ? 'yes' : 'NO', lci ? 'ok' : 'no']]);
   }
   drawGlyph(res, Q, wx, wy) {
-    const gl = this.glyph; while (gl.children.length) { const o = gl.children.pop(); o.geometry && o.geometry.dispose(); }
+    const gl = this.glyph; disposeGroup(gl);
     const lci = res.mu === 2; const col = lci ? 0x6fd37a : 0xff3b3b; const mat = new THREE.MeshStandardMaterial({ color: col, emissive: col, emissiveIntensity: 0.5, transparent: true, opacity: 0.85 });
     if (res.length === 1) { const m = new THREE.Mesh(new THREE.SphereGeometry(0.11, 14, 10), mat); m.userData.info = { title: 'Reduced point', html: '<p>Length 1: $\\Spec\\,\\mathbb{C}$, $I=(x,y)$, $\\mu=2$.</p>' }; gl.add(m); return; }
-    const info = lci ? { title: 'Curvilinear flat limit (l.c.i.)', html: '<p>The limit scheme is $\\Spec\\,\\mathbb{C}[s]/s^{d}$ embedded with a tangent line / osculating parabola: generated by two elements, hence a complete intersection in $\\mathbb{A}^2$ and a legitimate point of $\\mathrm{Hilb}^{\\rm lci}_d(\\mathbb{A}^2)$.</p>' }
-      : { title: 'Flat limit $\\mathfrak m^2=(x,y)^2$ — not l.c.i.', html: '<p>The length-3 scheme $\\Spec\\,\\mathbb{C}[x,y]/(x,y)^2$ has Hilbert function $(1,2)$ — not symmetric, hence not Gorenstein, hence not a complete intersection; its ideal needs <b>3</b> generators. It is a smooth point of $\\mathrm{Hilb}_3(\\mathbb A^2)$ but lies outside the open lci locus $\\mathrm{Hilb}^{\\rm lci}_3(\\mathbb{A}^2)$ of Prop. <code>embn</code>. No stabilisation $\\mathbb{A}^2\\subset\\mathbb{A}^n$ helps: l.c.i. is intrinsic.</p>' };
+    const info = lci ? { title: 'Curvilinear flat limit (l.c.i.; schematic glyph)', html: '<p>The limit scheme is $\\Spec\\,\\mathbb{C}[s]/s^{d}$ embedded with a tangent line / osculating parabola: generated by two elements, hence a complete intersection in $\\mathbb{A}^2$ and a legitimate point of $\\mathrm{Hilb}^{\\rm lci}_d(\\mathbb{A}^2)$.</p>' }
+      : { title: 'Flat limit $\\mathfrak m^2=(x,y)^2$ — not l.c.i.', html: '<p>The length-3 scheme $\\Spec\\,\\mathbb{C}[x,y]/(x,y)^2$ has Hilbert function $(1,2)$ — not symmetric, hence not Gorenstein, hence not a complete intersection; its ideal needs <b>3</b> generators. It is a smooth point of $\\mathrm{Hilb}_3(\\mathbb A^2)$ but lies outside the open lci locus $\\mathrm{Hilb}^{\\rm lci}_3(\\mathbb{A}^2)$ of Prop. <code>embn</code>. Changing the embedding cannot make this scheme l.c.i. This excludes it from the MGL support model, not from arbitrary Thom spectra.</p>' };
     if (!lci) { const m = new THREE.Mesh(new THREE.IcosahedronGeometry(0.2, 1), mat); m.userData.info = info; gl.add(m); return; }
     // curvilinear glyph: segment (homothetic) or parabola (parabolic) or generic direction
     const pts = []; let dir = null;
-    if (wx === 1 && wy === 1) { const J1 = res.J[1]; if (J1 && J1.basis.length) { const b = J1.basis[0]; const ms = J1.mons; let a = 0, bb = 0; ms.forEach((m, i) => { if (m.a === 1) a = b[i]; else bb = b[i]; }); dir = [-bb, a]; } }
-    if (wx === 1 && wy === 2) { const J2 = res.J[2]; let gam = 0; if (J2 && J2.basis.length) { J2.basis.forEach(b => { let cy = 0, cx = 0; J2.mons.forEach((m, i) => { if (m.b === 1) cy = b[i]; if (m.a === 2) cx = b[i]; }); if (Math.abs(cy) > 1e-6) gam = -cx / cy; }); } for (let k = -20; k <= 20; k++) { const x = k / 20 * 0.7; pts.push(new THREE.Vector3(x, 0.0, -gam * x * x)); } }
+    if (wx === 1 && (wy === 1 || wy === 2)) { const J1 = res.J[1]; if (J1 && J1.basis.length) { const b = J1.basis[0]; const ms = J1.mons; let a = 0, bb = 0; ms.forEach((m, i) => { if (m.a === 1) a = b[i]; else bb = b[i]; }); dir = [-bb, a]; } }
+    if (!dir && wx === 1 && wy === 2) { const J2 = res.J[2]; let gam = 0; if (J2 && J2.basis.length) { J2.basis.forEach(b => { let cy = 0, cx = 0; J2.mons.forEach((m, i) => { if (m.b === 1) cy = b[i]; if (m.a === 2) cx = b[i]; }); if (Math.abs(cy) > 1e-6) gam = -cx / cy; }); } for (let k = -20; k <= 20; k++) { const x = k / 20 * 0.7; pts.push(new THREE.Vector3(x, 0.0, -gam * x * x)); } }
     if (dir) { const n = Math.hypot(...dir) || 1; for (let k = -1; k <= 1; k += 0.1) pts.push(new THREE.Vector3(k * 0.7 * dir[0] / n, 0, -k * 0.7 * dir[1] / n)); }
     if (!pts.length) for (let k = -10; k <= 10; k++) pts.push(new THREE.Vector3(k / 10 * 0.5, 0, 0));
     const tube = new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 40, 0.04, 8), mat); tube.userData.info = info; gl.add(tube);
@@ -1561,7 +1534,7 @@ class Tab2 extends Tab {
     return [...this.qMeshes.filter(m => m.visible), ...this.glyph.children];
   }
   pointInfo() {
-    const E = this.effective(), R = this.tracks ? this.tracks.map(t => t.z) : []; const parts = this.partition(R);
+    const E = this.effective(), R = this.tracks ? this.tracks.map(t => t.z) : []; const parts = this.loop.on||this.loop.done?this.partition(R):exactParts(this.params);
     return { title: 'The point $P$ of $\\mathrm{Hilb}_' + this.deg() + '(\\mathbb{A}^1)=\\mathbb{A}^' + this.deg() + '$', html: '<p>$f(z)=z^' + this.deg() + '+(' + E[0].toFixed(3) + ')z^' + (this.deg() - 2) + '+(' + E[1].toFixed(3) + ')z' + (this.deg() === 4 ? '+(' + E[2].toFixed(3) + ')' : '') + '$ — the finite flat l.c.i. scheme $Z=\\Spec\\,\\mathbb{C}[z]/(f)$. Multiplicity pattern $' + parts.join('+') + '$, i.e. local algebra $\\prod_j\\mathbb{C}[z]/(z-z_j)^{m_j}$.</p>' };
   }
   pointerDown(ray) {
@@ -1587,7 +1560,7 @@ class Tab2 extends Tab {
   finishLoop() {
     const z0 = this.loop.z0; if (!z0) return; const perm = this.tracks.map(t => { let bj = 0, bd = Infinity; z0.forEach((z, j) => { const dd = Cx.abs(Cx.sub(z, t.z)); if (dd < bd) { bd = dd; bj = j; } }); return bj; });
     const cyc = []; const seen = new Set(); perm.forEach((_, i) => { if (seen.has(i)) return; const c = [i + 1]; seen.add(i); let j = perm[i]; while (j !== i && !seen.has(j)) { c.push(j + 1); seen.add(j); j = perm[j]; } if (c.length > 1) cyc.push('(' + c.join(' ') + ')'); });
-    this.loop.perm = cyc.length ? cyc.join('') : 'identity';
+    this.loop.perm = this.loop.unsafe || new Set(perm).size!==perm.length ? 'unresolved (near discriminant)' : (cyc.length ? cyc.join('') : 'identity')+' (numerical)';
     this.Pm.position.copy(this.P2V(...this.effective()));
     this.readoutA();
   }
@@ -1657,7 +1630,7 @@ class Tab3 extends Tab {
       el('div', { class: 'btnrow' }, this.btn('▶ play', () => { this.playing = true; this.pT0 = performance.now(); }))));
     c.append(this.sec('Layers',
       this.check({ key: 'slice', label: 'slice plane and current points', value: true, onChange: () => this.refresh() })));
-    c.append(this.sec('What to try', el('ol', { html: '<li>Reversal on 4 points: the naive path (white) crosses itself $6$ times, i.e. leaves $\\mathrm{Emb}_1$ — the plot of $\\min$ distance hits $0$.</li><li>The doubling braid (red) keeps the minimum distance positive for all $t$ because the second coordinate $t(t-1)z$ separates points that cross in $x$.</li><li>Read off the braid word: its permutation is $\\pi$, its crossing number the number of inversions.</li><li>Change $c$: any $c\\ne0$ works (the proof only uses $t(t-1)\\ne0$ for $t\\ne0,1$).</li>' })));
+    c.append(this.sec('What to try', el('ol', { html: '<li>Reversal on 4 equally spaced points: six pairwise collisions occur at one quadruple event. The naive map fails to embed the fixed reduced scheme; its flat image is still allowed in $\\mathrm{Emb}_1$.</li><li>The doubling braid (red) keeps the minimum distance positive for all $t$ because the second coordinate $t(t-1)z$ separates points that cross in $x$.</li><li>Read off the braid word: its permutation uses initial rank → final rank, its crossing number the number of inversions.</li><li>Change $c$: any $c\\ne0$ works (the proof only uses $t(t-1)\\ne0$ for $t\\ne0,1$).</li>' })));
     c.append(el('div', { id: 't3-braid', class: 'ref' }));
     math(c);
   }
@@ -1670,7 +1643,7 @@ class Tab3 extends Tab {
   refresh() {
     if (!this.strands) return;
     const k = this.k, c = this.params.cc, io = this.io(), H = this.Ht; this.stats = {};
-    const clear = g => { while (g.children.length) { const o = g.children.pop(); o.geometry && o.geometry.dispose(); } };
+    const clear = disposeGroup;
     clear(this.strands); clear(this.marks);
     const toV = (x, y, t) => new THREE.Vector3(x, t * H, -y);
     const N = 90;
@@ -1697,7 +1670,7 @@ class Tab3 extends Tab {
       const d0 = io.x1[a] - io.x1[b], d1 = io.x0[a] - io.x0[b];
       if (d0 * d1 < 0) { const ts = d0 / (d0 - d1), x = this.naive(a, ts, io); ncross++;
         const m = new THREE.Mesh(new THREE.TorusGeometry(0.14, 0.025, 8, 24), new THREE.MeshBasicMaterial({ color: 0xff3b3b })); m.position.copy(toV(x, 0, ts)); m.rotation.x = Math.PI / 2;
-        m.userData.info = { title: 'Collision of the naive path', html: '<p>Points $' + (a + 1) + '$ and $' + (b + 1) + '$ meet at $t_*=' + ts.toFixed(3) + '$, $x_*=' + x.toFixed(3) + '$: the straight-line interpolation of two embeddings in $\\mathbb{A}^1$ ceases to be an embedding (a non-reduced $Z$ of the wrong shape, and non-flat as a family of reduced points) — it leaves $\\mathrm{Emb}_1$.</p>' }; this.marks.add(m); }
+        m.userData.info = { title: 'Collision of the naive path', html: '<p>Points $' + (a + 1) + '$ and $' + (b + 1) + '$ meet at $t_*=' + ts.toFixed(3) + '$, $x_*=' + x.toFixed(3) + '$: the straight-line interpolation of two embeddings in $\\mathbb{A}^1$ ceases to embed the fixed labelled scheme (the image can be a finite flat non-reduced family in $\\mathrm{Emb}_1$, but is not an embedded copy of the fixed reduced scheme) — the isomorphism-type-preserving construction fails.</p>' }; this.marks.add(m); }
     }
     /* slice */
     const t = this.params.t; this.slice.visible = this.params.slice; this.slice.position.y = t * H;
@@ -1709,15 +1682,15 @@ class Tab3 extends Tab {
     for (let i = 0; i <= T; i++) { const tt = i / T; const a = this.minDist(aa => this.pos1(aa, tt, c, io), k); const b = this.minDist(aa => [this.naive(aa, tt, io), 0], k); dd.push(a); dn.push(b); mDouble = Math.min(mDouble, i > 0 && i < T ? a : Infinity); mNaive = Math.min(mNaive, b); }
     const word = this.braidWord(io, c);
     this.drawPlan(io, c, t); this.drawDist(dd, dn);
-    const bw = $('#t3-braid'); if (bw) { setHTML(bw, '<p><b>Braid word of the doubling strands</b> (convention: the strand moving right passes in front, i.e. has larger $y$): $' + (word.w.length ? word.w.join('\\,') : '1') + '$ &nbsp; (length ' + word.w.length + '), induced permutation $' + (word.perm.every((p, i) => p === i) ? '\\mathrm{id}' : '(' + word.perm.map(p => p + 1).join(' ') + ')') + '$.</p>'); math(bw); }
+    const bw = $('#t3-braid'); if (bw) { setHTML(bw, '<p><b>Braid word of the doubling strands</b> (convention: the strand moving right passes in front, i.e. has larger $y$): $' + (word.w.length ? word.w.join('\\,') : '1') + '$ &nbsp; (length ' + word.w.length + '), induced permutation (one-line notation; initial rank → final rank) $' + (word.perm.every((p, i) => p === i) ? '\\mathrm{id}' : '[' + word.perm.map(p => p + 1).join(',') + ']' ) + '$.</p>'); math(bw); }
     this.mDouble = mDouble; this.mNaive = mNaive;
-    App.cur === this && App.readout([['$|Z|$ / inversions of $\\pi$', k + ' / ' + this.inversions(), ''], ['$\\min_t$ distance, doubling', mDouble.toFixed(4), mDouble > 1e-3 ? 'ok' : 'no'],
-      ['$\\min_t$ distance, naive', mNaive.toFixed(4), mNaive > 1e-3 ? 'ok' : 'no'], ['naive collisions', ncross, ncross ? 'no' : 'ok'], ['braid length', word.w.length, ''], ['$t$', t.toFixed(3), '']]);
+    App.cur === this && App.readout([['$|Z|$ / inversions of $\\pi$', k + ' / ' + this.inversions(), ''], ['sampled min distance, doubling', mDouble.toFixed(4), mDouble > 1e-3 ? 'ok' : 'no'],
+      ['sampled min distance, naive', mNaive.toFixed(4), mNaive > 1e-3 ? 'ok' : 'no'], ['pairwise naive collisions', ncross, ncross ? 'no' : 'ok'], ['braid length', word.w.length, ''], ['$t$', t.toFixed(3), '']]);
   }
   inversions() { let n = 0; for (let i = 0; i < this.k; i++) for (let j = i + 1; j < this.k; j++) if (this.pi[i] > this.pi[j]) n++; return n; }
   braidWord(io, c) {
     const k = this.k, T = 6000; const ord = t => [...Array(k).keys()].sort((a, b) => this.pos1(a, t, c, io)[0] - this.pos1(b, t, c, io)[0]);
-    let prev = ord(0); const w = []; const y = (a, t) => this.pos1(a, t, c, io)[1];
+    let prev = ord(0); const initial=prev.slice(); const w = []; const y = (a, t) => this.pos1(a, t, c, io)[1];
     for (let s = 1; s <= T; s++) {
       const t = s / T; const cur = ord(t);
       for (let pass = 0; pass < k * k; pass++) { // bubble steps between prev and cur
@@ -1733,7 +1706,7 @@ class Tab3 extends Tab {
         if (!changed) break;
       }
     }
-    return { w, perm: prev };
+    return { w, perm: initial.map(a=>prev.indexOf(a)) };
   }
   drawPlan(io, c, t) {
     const cv = this.planCv, g = cv.getContext('2d'), W = cv.width, Hh = cv.height, k = this.k;
@@ -1785,7 +1758,7 @@ class Tab4 extends Tab {
     this.chartEl = el('div'); this.legend = [
       { color: '#5fd4c4', text: 'image $\\phi_s(\\mathbb{R}^m)\\subset V=\\mathbb{R}^3$' },
       { color: '#f2b84b', text: 'target locus $Z$ (codimension $c$)' },
-      { color: '#ff3b3b', text: 'support $S=\\phi_s^{-1}(Z)$ (numerical)' },
+      { color: '#ff3b3b', text: 'near-hits to $\\phi_s^{-1}(Z)$ (tolerance)' },
       { color: '#a78bfa', text: 'push-off direction $w$ (the extra normal directions)' },
     ];
     this.buildControls(); this.setTheory(THEORY.t4); this.refresh();
@@ -1805,7 +1778,7 @@ class Tab4 extends Tab {
       this.select({ key: 'ex', label: 'Thom spectrum $E$', options: [['1', 'Σ^∞ X₊,  MGL,  MSL,  MSp :  d = 1'], ['-1', 'T² ∧ MGL :  d = −1'], ['0', 'T ∧ MGL :  d = 0'], ['3', 'MGL[−2]  (negative shift) :  d = 3'], ['9', 'custom d']], value: '1', onChange: v => { if (v !== '9') { this.sliders.d.set(+v); } } }),
       this.slider({ key: 'd', label: 'bounding constant $d$', min: -3, max: 5, step: 1, value: 1, fmt: v => String(v), onInput: () => this.refreshChart() }),
       this.chartEl));
-    c.append(this.sec('What to try', el('ol', { html: '<li>$m<c$ (e.g. $m=1,c=2$ or $m=2,c=3$): move $s$ — the support $S$ <i>disappears</i> for generic $s$: the probe can be pushed off $Z$ in the extra normal directions, so every probe is homotopic to the base point ($\\pi_0=*$).</li><li>$m=c$: the support cannot be removed; increasing $A$ creates and annihilates points in pairs but the degree (signed count) stays $1$. In algebraic geometry multiplicities are positive, so the count is a non-negative integer: a <i>monoid</i>.</li><li>$m>c$: $S$ is a positive-dimensional submanifold.</li><li>Chart: change $d$ and read off the first fibrant level.</li>' })));
+    c.append(this.sec('What to try', el('ol', { html: '<li>$m<c$ (e.g. $m=1,c=2$ or $m=2,c=3$): move $s$ — the support $S$ <i>disappears</i> for generic $s$: the probe can be pushed off $Z$ in the extra normal directions, so every probe is homotopic to the base point ($\\pi_0=*$).</li><li>$m=c$: the global real signed degree stays $1$; finite-window hit counts are numerical and may be unresolved. This model does not determine the component monoid of a general E-framed motive.</li><li>$m>c$: a transverse nonempty inverse image has positive expected dimension; singular parameters require separate analysis.</li><li>Chart: change $d$ and read off the first fibrant level.</li>' })));
     math(c);
   }
   /* ---------- the map phi_s ---------- */
@@ -1818,7 +1791,7 @@ class Tab4 extends Tab {
   refresh() {
     if (!this.imgGroup) return;
     const m = +this.params.m, c = +this.params.c, A = this.params.A, s = this.params.s;
-    const clear = g => { while (g.children.length) { const o = g.children.pop(); o.geometry && o.geometry.dispose(); } };
+    const clear = disposeGroup;
     clear(this.imgGroup); clear(this.zGroup); clear(this.hitGroup);
     /* Z */
     const zm = new THREE.MeshStandardMaterial({ color: 0xf2b84b, emissive: 0xf2b84b, emissiveIntensity: 0.3, transparent: true, opacity: c === 1 ? 0.28 : 1, side: THREE.DoubleSide });
@@ -1830,7 +1803,7 @@ class Tab4 extends Tab {
       const N = 1400, pts = [], dist = []; for (let i = 0; i <= N; i++) { const u = -2.6 + 5.2 * i / N, f = this.phi(1, u, 0, A, s); pts.push(this.toV(f)); const d = Math.hypot(...f.slice(0, c)); dist.push(d); minD = Math.min(minD, d); }
       const tube = new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts.filter((_, i) => i % 4 === 0)), 350, 0.03, 8), new THREE.MeshStandardMaterial({ color: 0x5fd4c4, emissive: 0x2a8f82, emissiveIntensity: 0.3 }));
       tube.userData.info = { title: 'The probe $\\phi_s:\\mathbb{R}^1\\to V$', html: '<p>A curve $u\\mapsto\\phi(u)+s\\,w$ with $\\phi(u)=(u,0,0)+A\\cdot(\\text{bounded wiggles})$. Its preimage of $Z$ is $S=\\{u:\\ (\\phi_1,\\dots,\\phi_c)(u)=0\\}$.</p>' }; this.imgGroup.add(tube);
-      for (let i = 1; i < N; i++) if (dist[i] < dist[i - 1] && dist[i] <= dist[i + 1] && dist[i] < 0.03) { const h = new THREE.Mesh(new THREE.SphereGeometry(0.09, 14, 10), new THREE.MeshBasicMaterial({ color: 0xff3b3b })); h.position.copy(pts[i]); h.userData.info = { title: 'A point of the support $S$', html: '<p>$\\phi_s(u)\\in Z$ at $u\\approx' + (-2.6 + 5.2 * i / N).toFixed(3) + '$ (numerical; distance $' + dist[i].toExponential(1) + '$).</p>' }; this.hitGroup.add(h); }
+      for (let i = 1; i < N; i++) if (dist[i] < dist[i - 1] && dist[i] <= dist[i + 1] && dist[i] < 0.03) { const h = new THREE.Mesh(new THREE.SphereGeometry(0.09, 14, 10), new THREE.MeshBasicMaterial({ color: 0xff3b3b })); h.position.copy(pts[i]); h.userData.info = { title: 'Numerical near-hit to the support', html: '<p>A near-hit to Z at $u\\approx' + (-2.6 + 5.2 * i / N).toFixed(3) + '$ (near-hit only, not a certified zero; distance $' + dist[i].toExponential(1) + '$).</p>' }; this.hitGroup.add(h); }
     } else {
       const N = 70, g = new THREE.BufferGeometry(), pos = [], col = [], idx = [];
       for (let j = 0; j <= N; j++) for (let i = 0; i <= N; i++) { const u1 = -2.4 + 4.8 * i / N, u2 = -2.4 + 4.8 * j / N, f = this.phi(2, u1, u2, A, s); const v = this.toV(f); pos.push(v.x, v.y, v.z); const d = Math.hypot(...f.slice(0, c)); const hot = clamp(1 - d / 0.22, 0, 1); col.push(lerp(0.2, 1.0, hot), lerp(0.62, 0.15, hot), lerp(0.58, 0.1, hot)); }
@@ -1846,9 +1819,9 @@ class Tab4 extends Tab {
     if (m === 1 && c === 1) { const a = this.phi(1, -2.6, 0, A, s)[0], b = this.phi(1, 2.6, 0, A, s)[0]; degTxt = String((Math.sign(b) - Math.sign(a)) / 2); }
     if (m === 2 && c === 2) { degTxt = String(this.winding(A, s)); }
     const dimS = m - c; const empty = minD > 0.03;
-    setHTML(this.resultsEl, '<p>expected $\\dim S=m-c=' + dimS + '$ &nbsp;·&nbsp; $\\min\\,\\mathrm{dist}(\\phi_s,Z)=' + minD.toFixed(3) + '$ &nbsp;⇒&nbsp; <b>' + (empty ? '$S=\\emptyset$' : '$S\\neq\\emptyset$') + '</b>' + (m === c ? ' &nbsp;·&nbsp; degree (signed count) $=' + degTxt + '$' : '') + '</p>' + '<p>' + (m < c ? 'Here $m<c$: generic probes miss $Z$; the family $\\phi_s$ pushes them off. <b>Connected</b> ($\\pi_0=*$).' : (m === c ? 'Borderline $m=c$: the degree is a homotopy invariant, supports are only created/annihilated in pairs. Algebraically the count is $\\ge0$ (a monoid $\\mathbb N$); $\\pi_0$ is a group completion problem.' : 'Here $m>c$: $S$ has dimension $m-c>0$.')) + '</p>');
+    setHTML(this.resultsEl, '<p>expected $\\dim S=m-c=' + dimS + '$ &nbsp;·&nbsp; $\\min\\,\\mathrm{dist}(\\phi_s,Z)=' + minD.toFixed(3) + '$ &nbsp;⇒&nbsp; <b>' + (empty ? 'no hit detected on the sampled window' : 'within distance 0.03 of Z (not a certified zero)') + '</b>' + (m === c ? ' &nbsp;·&nbsp; degree (signed count) $=' + degTxt + '$' : '') + '</p>' + '<p>' + (m < c ? 'Here $m<c$: generic probes miss $Z$; the family $\\phi_s$ pushes them off. <b>Connected</b> ($\\pi_0=*$).' : (m === c ? 'Borderline $m=c$: the degree is a homotopy invariant, supports are only created/annihilated in pairs. This real signed-degree model does not determine the component monoid of a general E-framed motive.' : 'Here $m>c$: a transverse nonempty inverse image has expected dimension $m-c>0$.')) + '</p>');
     math(this.resultsEl);
-    App.cur === this && App.readout([['$(m,c)$', '(' + m + ',' + c + ')', ''], ['$m<c$ ?', m < c ? 'yes: connected' : (m === c ? 'borderline' : 'no'), m < c ? 'ok' : (m === c ? 'wa' : 'no')], ['$s$', s.toFixed(3), ''], ['min dist to $Z$', minD.toFixed(3), ''], ['$S$', empty ? '∅' : 'non-empty', empty ? 'ok' : 'wa'], ...(m === c ? [['degree', degTxt, 'wa']] : [])]);
+    App.cur === this && App.readout([['$(m,c)$', '(' + m + ',' + c + ')', ''], ['$m<c$ ?', m < c ? 'yes: connected' : (m === c ? 'borderline' : 'no'), m < c ? 'ok' : (m === c ? 'wa' : 'no')], ['$s$', s.toFixed(3), ''], ['min dist to $Z$', minD.toFixed(3), ''], ['sampled support test', empty ? 'no near-hit in window' : 'near-hit (tolerance 0.03)', 'wa'], ...(m === c ? [['degree', degTxt, 'wa']] : [])]);
     this.refreshChart();
   }
   winding(A, s) { // winding of (phi_1, phi_2) around 0 along the boundary of [-2.4,2.4]^2 (m=c=2)
@@ -1886,7 +1859,7 @@ class Tab4 extends Tab {
 /* ---- tab5.js ---- */
 'use strict';
 /* =====================================================================
-   Experiment 5 — Architecture of the results: an interactive commutative diagram
+   Experiment 5 — Architecture of the results: an interactive dependency and comparison diagram
    Nodes = objects; edges = comparison maps; each carries its hypotheses.
    ===================================================================== */
 class Tab5 extends Tab {
@@ -1906,7 +1879,7 @@ class Tab5 extends Tab {
       N('Thf', 600, 0, '$C_*\\Theta^\\infty(E)^f$<br><small>motivically fibrant from level $\\max(0,d)$</small>', [], '$C_*\\Theta^\\infty(E)^f$ — Theorem [thmthom]', '<p><b>Theorem.</b> Let $E$ be a Thom spectrum with bounding constant $d$. Then $C_*\\Theta^\\infty(E)^f$ (levelwise Nisnevich-local fibrant replacement) is motivically fibrant starting from level $\\max(0,d)$ and is stably equivalent to $E$. <i>No symmetry assumption.</i> Proof: layer by layer via Cor. <code>geomaincor</code> (codimension count) and the isomorphism of bonding maps (Lemma <code>thetaomega</code>).</p>'),
       N('Sym', 300, 140, '$C_*\\Theta^\\infty_{\\rm sym}(E)$<br><small>uses the $\\Sigma_n$-action</small>', ['sym'], '$C_*\\Theta^\\infty_{\\rm sym}(E)$', '<p>Requires a <i>symmetric</i> $T$-spectrum (map $T\\wedge E\\to E[1]$). Same spaces as $\\Theta^\\infty(E)_i$ (Lemma <code>spacetrue=fake</code>) but different bonding maps: they twist by shuffle permutations $\\chi_{i,1}$.</p>'),
       N('ThTs', 600, 140, '$C_*\\Theta^\\infty(\\Theta^\\infty_{\\rm sym}E)$', ['sym'], '$C_*\\Theta^\\infty(\\Theta^\\infty_{\\rm sym}E)$', '<p>The common target of the zig-zag in Prop. <code>truefakezigzag</code>. Its spaces are $\\Theta^\\infty(E)_i$ by Lemma <code>infm=inf</code>.</p>'),
-      N('Fr', 0, 140, '$C_*\\mathrm{Fr}^E(S_T)^f$<br><small>$\\mathrm{Fr}^E_n(T^i)=\\underline{\\mathrm{Hom}}(\\mathbb{P}^{\\wedge n},T^i\\wedge E_n)$</small>', ['sym'], '$C_*\\mathrm{Fr}^E(S_T)^f$ — Theorem [main]', '<p><b>Theorem [main].</b> For symmetric Thom $E$ with bounding constant $d$ and contractible alternating group action, $C_*\\mathrm{Fr}^E(S_T)^f$, $C_*\\Theta^\\infty(E)^f$, $C_*\\Theta^\\infty_{\\rm sym}(E)^f$ are isomorphic to $E$ in $SH(k)$ and motivically fibrant from level $\\max(0,d)$. The $E$-framed correspondences $\\mathrm{Fr}_n^E(X)$ have the explicit description of Lemma <code>Frescheme</code>.</p>'),
+      N('Fr', 0, 140, '$C_*\\mathrm{Fr}^E(S_T)^f$<br><small>$\\mathrm{Fr}^E_n(T^i)=\\underline{\\mathrm{Hom}}(\\mathbb{P}^{\\wedge n},T^i\\wedge E_n)$</small>', ['sym', 'alt'], '$C_*\\mathrm{Fr}^E(S_T)^f$ — Theorem [main]', '<p><b>Theorem [main].</b> For symmetric Thom $E$ with bounding constant $d$ and contractible alternating group action, $C_*\\mathrm{Fr}^E(S_T)^f$, $C_*\\Theta^\\infty(E)^f$, $C_*\\Theta^\\infty_{\\rm sym}(E)^f$ are isomorphic to $E$ in $SH(k)$ and motivically fibrant from level $\\max(0,d)$. The $E$-framed correspondences $\\mathrm{Fr}_n^E(X)$ have the explicit description of Lemma <code>Frescheme</code>.</p>'),
       N('ME', 0, 280, '$M_E(X)=C_*\\mathrm{Fr}^E(X_+\\wedge\\mathbb S)$<br><small>Segal $S^1$-spectrum, $E$-framed motive</small>', [], '$E$-framed motive $M_E(X)$', '<p>Via the $\\Gamma$-space $K\\mapsto C_*\\mathrm{Fr}^E(X_+\\wedge K)$. Explicit sheaf of $S^1$-spectra; $M_E(X)=\\operatorname{colim}_k\\underline{\\mathrm{Hom}}(\\mathbb{P}^{\\wedge k},M_{fr}(X_+\\wedge E_k))$ [Lemma <code>factmotive</code>].</p>'),
       N('Bi', 300, 280, '$M^{\\mathbb G}_E(X)_f=(M_E(X)_f,M_E(X_+\\wedge\\mathbb G_m)_f,\\dots)$<br><small>$\\simeq X_+\\wedge E$ in bispectra</small>', ['sym', 'alt'], 'The bispectrum $M^{\\mathbb G}_E(X)_f$ — Theorem [mainbisp]', '<p>$(1)$ $d=1$: motivically fibrant (stable local fibrant replacements), represents $X_+\\wedge E$. $(2)$ $d<1$: same with <i>level</i> local replacements. $(3)$ $d>1$: apply $\\Omega^{d-1}_{S^1\\wedge\\mathbb G_m}$ to the bispectrum of $E[d-1]$ (equivalently $T^{d-1}\\wedge E$). Key inputs: Cancellation Theorem for framed motives [AGP] and Prop. <code>cancel</code>.</p>'),
       N('Til', 300, 420, '$\\widetilde M_E(X)$, $\\widetilde M^{\\mathbb G}_E(X)_f$<br><small>normally $E$-framed motives</small>', ['conv', 'd=1'], 'Normally $E$-framed motives — Theorem [bisptilde]', '<p>$\\widetilde{\\mathrm{Fr}}^E_n(X,Y)=\\{(U,Z,\\phi,\\psi,f)\\}$ with $\\psi:U\\to Z_n$ and $\\phi:N_{Z/\\mathbb{A}^n_X}\\cong(\\psi i)^*V_n$. Requires the structure of Convention <code>convention</code> ($E_n=\\operatorname{Th}(V_n)$, $V_n\\to Z_n$ a $\\Sigma_n$-equivariant bundle of rank $n$, Cartesian bonding squares) and $d=1$.</p>'),
@@ -1923,8 +1896,8 @@ class Tab5 extends Tab {
       E('e5', 'Th', 'ThTs', '$C_*\\Theta^\\infty(\\epsilon)$<br><small>truefakezigzag</small>', ['sym', 'alt'], '$C_*\\Theta^\\infty(\\epsilon)$', '<p>Local weak equivalence from level $\\max(0,d)$; same proof as $\\xi$. Together with $\\eta$ this makes the square of Prop. <code>truefakezigzag</code> commute with all arrows stable motivic equivalences.</p>'),
       E('e6', 'Fr', 'Sym', '$f_i$<br><small>fr=true</small>', ['sym', 'alt'], '$f:C_*\\mathrm{Fr}^E(S_T)\\to C_*\\Theta^\\infty_{\\rm sym}(E)$', '<p>Local weak equivalence for $i\\ge\\max(0,d)$ (Prop. <code>fr=true</code>), by Lemma <code>trususpshift</code>: $T^i\\wedge E\\to E[i]$ induces an equivalence on $C_*\\Theta^\\infty(-)_0$.</p>'),
       E('e7', 'Fr', 'ME', '$\\Gamma$-space<br><small>$K\\mapsto C_*\\mathrm{Fr}^E(X_+\\wedge K)$</small>', ['sym'], 'From $E$-framed correspondences to the $E$-framed motive', '<p>$M_E(\\mathcal X)=C_*\\mathrm{Fr}^E(\\mathcal X\\wedge\\mathbb S)$; the underlying $\\Gamma$-space is special by the Additivity Theorem (Prop. <code>additivity</code>, Cor. <code>specialgamma</code>).</p>'),
-      E('e8', 'ME', 'Bi', 'weights $\\mathbb{G}_m^{\\wedge j}$<br><small>cancel</small>', ['sym', 'alt'], 'Bonding maps from Cancellation', '<p>$M_E(X)\\to\\underline{\\mathrm{Hom}}(\\mathbb G_m^{\\wedge1},M_E(X_+\\wedge\\mathbb G_m^{\\wedge1}))$ is a stable local equivalence for $d\\le1$ (Prop. <code>cancel</code>(2)), reducing via Mayer–Vietoris (Prop. <code>MV</code>) to Cancellation for framed motives [AGP].</p>'),
-      E('e9', 'Fr', 'Bi', 'diagonal<br><small>mainbisp</small>', ['sym', 'alt'], 'Diagonal of the bispectrum', '<p>The positively fibrant $S^1\\wedge\\mathbb G_m$-spectrum $C_*\\mathrm{Fr}^E(S_{S^1\\wedge\\mathbb G_m})^f$ is equivalent to the diagonal of $M^{\\mathbb G}_E(X)$; the passage $T\\leftrightarrow\\mathbb A^1/\\!/\\mathbb G_m\\leftrightarrow S^1\\wedge\\mathbb G_m$ uses Lemma <code>a1gm</code> and Lemma <code>efrcompar2</code>.</p>'),
+      E('e8', 'ME', 'Bi', 'weights $\\mathbb{G}_m^{\\wedge j}$<br><small>cancel (raw E, d≤1)</small>', ['sym', 'alt', 'd<=1'], 'Bonding maps from Cancellation', '<p>$M_E(X)\\to\\underline{\\mathrm{Hom}}(\\mathbb G_m^{\\wedge1},M_E(X_+\\wedge\\mathbb G_m^{\\wedge1}))$ is a stable local equivalence for $d\\le1$ (Prop. <code>cancel</code>(2)), reducing via Mayer–Vietoris (Prop. <code>MV</code>) to Cancellation for framed motives [AGP].</p>'),
+      E('e9', 'Fr', 'Bi', 'diagonal (raw E, d≤1)<br><small>mainbisp</small>', ['sym', 'alt', 'd<=1'], 'Diagonal of the bispectrum', '<p>The positively fibrant $S^1\\wedge\\mathbb G_m$-spectrum $C_*\\mathrm{Fr}^E(S_{S^1\\wedge\\mathbb G_m})^f$ is equivalent to the diagonal of $M^{\\mathbb G}_E(X)$; the passage $T\\leftrightarrow\\mathbb A^1/\\!/\\mathbb G_m\\leftrightarrow S^1\\wedge\\mathbb G_m$ uses Lemma <code>a1gm</code> and Lemma <code>efrcompar2</code>.</p>'),
       E('e10', 'ME', 'Til', '$\\mathrm{fog}$<br><small>normfrcor</small>', ['conv', 'd=1'], '$\\mathrm{fog}:M_E(Y)\\to\\widetilde M_E(Y)$', '<p>Local stable weak equivalence (Prop. <code>normfrcor</code>) — <b>the content of Experiment 1</b>: the Čech nerve of $\\mathrm{fog}$ is filled by the linear-combination simplices of Lemma <code>homotopy</code>. Reduces by Zariski induction (Lemma <code>normMV</code>) to $Y$ étale over $\\mathbb A^d$ (Lemma <code>normfrcoret</code>).</p>'),
       E('e11', 'Bi', 'Til', 'level equiv.<br><small>bisptilde</small>', ['conv', 'd=1', 'sym', 'alt'], '$M^{\\mathbb G}_E(X)_f\\to\\widetilde M^{\\mathbb G}_E(X)_f$', '<p>A level equivalence; $\\widetilde M^{\\mathbb G}_E(X)_f$ is therefore also motivically fibrant and represents $X_+\\wedge E$ (Thm <code>bisptilde</code>). The sheaves of homotopy groups of $\\widetilde M_E$ are strictly $\\mathbb A^1$-invariant by [GPPresheaves] and Lemma <code>tildazf</code>.</p>'),
       E('e12', 'Til', 'Emb', 'forget $\\psi,\\phi$<br><small>A=B, B=Emb</small>', ['conv', 'mgl'], 'Forgetting the normal framing', '<p>$C_*\\widetilde{\\mathrm{Fr}}^{MGL}_n(X,Y)\\to C_*B_n(X,Y)\\to C_*\\mathrm{Emb}_n(X,Y)$ are trivial Kan fibrations on affine smooth $X$ (Lemmas <code>A=B</code>, <code>B=Emb</code>): the classifying data $(\\psi,\\phi)$ into $\\mathrm{Gr}(n)=\\operatorname{colim}\\mathrm{Gr}(n,N)$ is a contractible choice (Lemma <code>borderextend</code>, Henselian patching).</p>'),
@@ -1941,21 +1914,23 @@ class Tab5 extends Tab {
   buildControls() {
     const c = this.controlsEl; c.innerHTML = '';
     c.append(el('h2', { html: 'Experiment 5 · Which theorem needs which hypothesis?' }));
-    c.append(el('p', { class: 'ref', html: 'Nodes are objects, arrows are comparison maps, labels cite the theorem. An arrow turns <span style="color:#6fd37a">green</span> when all its hypotheses hold in the chosen setting, otherwise it is dimmed. Click any node or arrow for the exact statement.' }));
+    c.append(el('p', { class: 'ref', html: 'This is a dependency and comparison diagram: solid comparison branches carry the stated maps; construction edges such as forming a Γ-space change categories. No commutativity across those construction edges is asserted. An arrow turns <span style="color:#6fd37a">green</span> when all its hypotheses hold in the chosen setting, otherwise it is dimmed. Click any node or arrow for the exact statement.' }));
     const ps = [['mgl', '$E=MGL$ ($k=\\bar k$, char 0)'], ['sphere', '$E=\\Sigma^\\infty_T\\mathrm{pt}_+$'], ['t2mgl', '$T^2\\wedge MGL$ ($d=-1$)'], ['shift', '$MGL[-2]$ ($d=3$)'], ['nonsym', 'non-symmetric Thom spectrum'], ['Q', '$MGL$ over $k=\\mathbb{Q}$']];
     c.append(this.sec('Presets', el('div', { class: 'btnrow' }, ...ps.map(([k, t]) => this.btn(t, () => { Object.assign(this.Hy, this.presets[k]); this.syncUI(); this.refresh(); })))));
     this.hy = {};
-    const mk = (key, label) => { const cb = el('input', { type: 'checkbox' }); cb.checked = this.Hy[key]; cb.onchange = () => { this.Hy[key] = cb.checked; this.refresh(); }; this.hy[key] = cb; return el('label', { class: 'chk' }, cb, el('span', { html: label })); };
+    const mk = (key, label) => { const cb = el('input', { type: 'checkbox' }); cb.checked = this.Hy[key]; cb.onchange = () => { this.Hy[key] = cb.checked; this.constrain(key); this.syncUI(); this.refresh(); }; this.hy[key] = cb; return el('label', { class: 'chk' }, cb, el('span', { html: label })); };
     c.append(this.sec('Hypotheses',
       mk('sym', '$E$ symmetric $T$-spectrum'), mk('alt', 'contractible alternating group action ($\\mathbb{A}^1$-homotopy from even permutations to $\\mathrm{id}$)'),
       mk('conv', '$E$ satisfies Convention <code>convention</code> ($E_n=\\operatorname{Th}(V_n\\to Z_n)$, rank $n$, Cartesian bonding squares; for $MGL$ as a directed colimit)'),
       mk('mgl', '$E=MGL$ (so that normal framings factor through $\\mathrm{Gr}(n)$)'), mk('ac', '$k$ algebraically closed, $\\mathrm{char}\\,k=0$, with $\\epsilon:k\\hookrightarrow\\mathbb{C}$'),
-      this.slider({ key: 'd', label: 'bounding constant $d$', min: -3, max: 5, step: 1, value: 1, fmt: v => String(v), onInput: v => { this.Hy.d = v; this.refresh(); } })));
-    c.append(this.sec('Reading the diagram', el('p', { html: 'All spectra are considered after levelwise local fibrant replacement, from level <b id="t5-lev"></b> (= $\\max(0,d)$) on. A perfect base field $k$ is a standing hypothesis (strict $\\mathbb{A}^1$-invariance, [GPPresheaves]).' })));
+      this.slider({ key: 'd', label: 'bounding constant $d$', min: -3, max: 5, step: 1, value: 1, fmt: v => String(v), onInput: v => { this.Hy.d = v; this.Hy.mgl=false; this.Hy.conv=false; this.syncChecks(); this.refresh(); } })));
+    c.append(this.sec('Reading the diagram', el('p', { html: 'The P¹-spectrum branch uses levelwise local fibrant replacement from level <b id="t5-lev"></b> (= $\\max(0,d)$) on. Bispectrum columns instead use level local replacement for d&lt;1 and stable local replacement for d=1; d&gt;1 uses the shifted-and-looped model. A perfect base field $k$ is a standing hypothesis (strict $\\mathbb{A}^1$-invariance, [GPPresheaves]).' })));
     c.append(this.sec('Status of the headline results', el('div', { id: 't5-status', class: 'ref' })));
     math(c);
     this.setters.push(() => { this.resetState(); this.syncUI(); });
   }
+  syncChecks(){Object.keys(this.hy).forEach(k=>this.hy[k].checked=this.Hy[k]);}
+  constrain(key){const H=this.Hy;if(key==='mgl'&&H.mgl)Object.assign(H,{sym:true,alt:true,conv:true,d:1});if(key==='conv'&&H.conv)Object.assign(H,{sym:true,alt:true,d:1});if(!H.sym){H.alt=false;H.conv=false;H.mgl=false;}if(!H.alt){H.conv=false;H.mgl=false;}if(!H.conv)H.mgl=false;}
   syncUI() { Object.keys(this.hy).forEach(k => { this.hy[k].checked = this.Hy[k]; }); this.sliders.d.set(this.Hy.d, true); }
   /* ---------- diagram ---------- */
   buildDiagram() {
@@ -1994,6 +1969,7 @@ class Tab5 extends Tab {
   }
   refresh() {
     if (!this.nodeEls) return;
+    const bi=this.nodes.find(n=>n.id==='Bi');if(bi){bi.tex=this.Hy.d>1?'$\\Omega^{d-1}_{S^1\\wedge\\mathbb G_m}M^{\\mathbb G}_{E[d-1]}(X)_f$<br><small>shifted-and-looped model; $d='+this.Hy.d+'$</small>':'$M^{\\mathbb G}_E(X)_f$<br><small>represents $X_+\\wedge E$</small>';setHTML(this.nodeEls.Bi,bi.tex);math(this.nodeEls.Bi);}
     this.nodes.forEach(n => { const ok = n.req.every(r => this.reqOK(r)); const e = this.nodeEls[n.id]; e.classList.toggle('ok', ok); e.classList.toggle('no', !ok); e.classList.toggle('sel', this.sel === n.id); });
     this.edges.forEach(ed => { const ok = ed.req.every(r => this.reqOK(r)); const { ln, lb } = this.edgeEls[ed.id]; ln.setAttribute('stroke', ok ? '#6fd37a' : '#46566a'); ln.setAttribute('stroke-dasharray', ok ? '' : '5 4'); ln.setAttribute('marker-end', ok ? 'url(#ah-ok)' : 'url(#ah-no)'); lb.classList.toggle('ok', ok); lb.classList.toggle('no', !ok); lb.classList.toggle('sel', this.sel === ed.id); });
     const lev = $('#t5-lev'); if (lev) lev.textContent = Math.max(0, this.Hy.d);
